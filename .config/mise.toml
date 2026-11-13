@@ -1,0 +1,34 @@
+[task_config]
+includes = ["scripts"]
+
+[tasks.format]
+alias = ["fmt"]
+description = "Format all files"
+depends = ["format:**"]
+
+[tasks.lint]
+alias = ["l"]
+description = "Lint all files"
+depends = ["lint:**"]
+
+[tools]
+"cargo:cargo-llvm-cov" = "latest"
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-sort" = "latest"
+editorconfig-checker = "latest"
+markdownlint-cli2 = "latest"
+mr-boxington = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+taplo = "latest"
+usage = "latest"
+yamlfmt = "latest"
+
+[[tools.rust]]
+components = "clippy,llvm-tools-preview"
+mr_boxington = true
+version = "latest"
+
+[[tools.rust]]
+components = "rustfmt"
+version = "nightly"

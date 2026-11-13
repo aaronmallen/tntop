@@ -1,0 +1,7 @@
+{
+  "Exclude": [
+    "^\\.mise/",
+    "^\\.mise-data/",
+    "^LICENSE$"
+  ]
+}

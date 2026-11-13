@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+#MISE description="Run tests"
+#MISE alias=["t"]
+#USAGE flag "-f --filter <FILTER>" help="Filter tests by name"
+
+set -e
+set --
+
+if [ -n "${usage_filter:-}" ]; then
+  set -- "$@" --no-fail-fast --filter-expr "test(/${usage_filter}/)"
+fi
+
+mbx nextest run --all-features --no-tests pass "$@"

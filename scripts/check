@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+#MISE description="Check code for compilation errors"
+#MISE alias=["c"]
+
+set -e
+
+mbx check --workspace --all-features --all-targets

@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+#MISE description="Run all tests with coverage"
+#MISE alias=["t:c", "t:coverage"]
+
+set -e
+
+export MBX_SHARE_WORKSPACE_ROOT=0
+
+mbx llvm-cov nextest --summary-only --all-features --no-tests pass
+mbx llvm-cov report --html --output-dir coverage
+mbx llvm-cov report --cobertura --output-path coverage/cobertura.xml
