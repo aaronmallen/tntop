@@ -189,6 +189,35 @@ mod tests {
       use super::*;
 
       #[test]
+      fn it_loads_every_pinned_btop_theme() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
+        let mut count = 0;
+        for entry in std::fs::read_dir(directory).unwrap() {
+          let path = entry.unwrap().path();
+          if path.extension().is_some_and(|extension| extension == "theme") {
+            let source = std::fs::read_to_string(&path).unwrap();
+            let theme = Theme::parse(&source).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert_ne!(theme.color("main_fg"), Color::Reset, "{}", path.display());
+            assert_ne!(theme.color("selected_fg"), Color::Reset, "{}", path.display());
+            count += 1;
+          }
+        }
+        assert_eq!(count, 49);
+      }
+
+      #[test]
+      fn it_keeps_sparse_theme_fallbacks_and_menu_roles() {
+        let theme = Theme::parse("theme[main_bg]=\"#112233\"\ntheme[inactive_fg]=\"#445566\"\ntheme[selected_bg]=\"1 2 3\"\ntheme[selected_fg]=\"#ffffff\"\ntheme[cpu_mid]=\"\"\ntheme[cpu_end]=\"\"").unwrap();
+        assert_eq!(theme.style().bg, Some(Color::Rgb(17, 34, 51)));
+        assert_eq!(theme.color("selected_bg"), Color::Rgb(1, 2, 3));
+        assert_eq!(theme.color("selected_fg"), Color::Rgb(255, 255, 255));
+        assert_eq!(theme.color("meter_bg"), theme.color("inactive_fg"));
+        assert_eq!(theme.color("graph_text"), theme.color("inactive_fg"));
+        assert_eq!(theme.gradient("cpu", 0.9), theme.color("cpu_start"));
+        assert_eq!(theme.gradient("process", 0.9), theme.gradient("cpu", 0.9));
+      }
+
+      #[test]
       fn it_reads_btop_colors_and_optional_gradient_stops() {
         let theme = Theme::parse("# theme\n theme[main_bg]=\"\"\ntheme[main_fg]=\"#cc\"\ntheme[cpu_start]=\"0 10 20\"\ntheme[cpu_mid]=\"\"\ntheme[cpu_end]=\"#64788c\"\ntheme[future_key]=\"ignored\"").unwrap();
         assert_eq!(theme.color("main_bg"), Color::Reset);
