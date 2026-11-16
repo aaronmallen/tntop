@@ -68,6 +68,16 @@ fn rows(category: usize) -> Vec<OptionRow> {
         description: "Use the theme's background color. Disable to use your terminal background.",
       },
       OptionRow {
+        key: "truecolor",
+        label: "Truecolor",
+        description: "Use RGB colors. Disable for a 256-color terminal. Applies to panels, gradients, banners and dialogs.",
+      },
+      OptionRow {
+        key: "force_tty",
+        label: "Force TTY",
+        description: "Use a 16-color palette, ASCII labels and TTY graphs. Turning this off restores the selected theme and graph choices.",
+      },
+      OptionRow {
         key: "disable_mouse",
         label: "Disable mouse",
         description: "Use keyboard controls only. Release mouse capture so the terminal can select text.",

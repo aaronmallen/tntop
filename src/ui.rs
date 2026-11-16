@@ -1,4 +1,5 @@
 mod banner;
+mod display;
 mod help;
 mod input;
 mod manager;
@@ -120,7 +121,12 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
 }
 
 fn load_theme(settings: &Settings, config_path: &Path) -> Result<Theme, Error> {
-  Ok(Theme::load(settings.theme().as_deref(), config_path)?.with_background(settings.theme_background()))
+  let path = if settings.force_tty() {
+    Some(Path::new("TTY"))
+  } else {
+    settings.theme().as_deref()
+  };
+  Ok(Theme::load(path, config_path)?.with_background(settings.theme_background()))
 }
 
 fn apply_preferences(

@@ -44,6 +44,10 @@ pub struct Settings {
   #[get_copy = "pub"]
   theme_background: bool,
   #[get_copy = "pub"]
+  truecolor: bool,
+  #[get_copy = "pub"]
+  force_tty: bool,
+  #[get_copy = "pub"]
   graph_symbol: GraphSymbol,
   #[get_copy = "pub"]
   graph_symbol_cpu: GraphSymbol,
@@ -106,6 +110,8 @@ impl Default for Settings {
       disable_mouse: false,
       theme: None,
       theme_background: true,
+      truecolor: true,
+      force_tty: false,
       graph_symbol: GraphSymbol::Braille,
       graph_symbol_cpu: GraphSymbol::Default,
       graph_symbol_mem: GraphSymbol::Default,

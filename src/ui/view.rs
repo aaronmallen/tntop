@@ -31,6 +31,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   } else {
     super::menu::draw(frame, ui);
   }
+  super::display::apply(frame, settings.truecolor(), ui.theme.is_tty());
 }
 
 fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
@@ -95,13 +96,15 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .alignment(Alignment::Right),
     clock,
   );
-  cpu::draw(
-    frame,
-    cpu,
-    &state,
-    theme,
-    settings.graph_symbol_cpu().resolve(settings.graph_symbol()),
-  );
+  let tty = theme.is_tty();
+  let symbol = |symbol: GraphSymbol| {
+    if tty {
+      GraphSymbol::Tty
+    } else {
+      symbol.resolve(settings.graph_symbol())
+    }
+  };
+  cpu::draw(frame, cpu, &state, theme, symbol(settings.graph_symbol_cpu()));
   let [left, apps] = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(bottom);
   let [memory, network] = Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).areas(left);
   memory::draw(
@@ -110,7 +113,7 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     &state,
     ui.pool,
     theme,
-    settings.graph_symbol_mem().resolve(settings.graph_symbol()),
+    symbol(settings.graph_symbol_mem()),
   );
   network::draw(
     frame,
@@ -118,15 +121,9 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     &state,
     ui.interface,
     theme,
-    settings.graph_symbol_net().resolve(settings.graph_symbol()),
+    symbol(settings.graph_symbol_net()),
   );
-  apps::draw(
-    frame,
-    apps,
-    &state,
-    ui,
-    settings.graph_symbol_apps().resolve(settings.graph_symbol()),
-  );
+  apps::draw(frame, apps, &state, ui, symbol(settings.graph_symbol_apps()));
   let status = match state.error() {
     Some(error) => format!(" {error} | last sample {}", age(*state.updated_at())),
     None => format!(
@@ -481,6 +478,66 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[tokio::test]
+    async fn it_applies_display_modes_to_panels_and_every_overlay_then_restores_choices() {
+      use std::path::Path;
+
+      use crate::ui::{apply_preferences, load_theme, manager::Dialog, menu::Menu};
+      let path = Path::new("config.toml");
+      let mut settings = settings()
+        .with_preference("theme", serde_json::json!("dracula"))
+        .unwrap();
+      let mut ui = ui();
+      let (_, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      let id = ui.sessions[0].as_ref().unwrap().task.id();
+      let original = load_theme(&settings, path).unwrap().color("main_bg");
+      for tty in [false, true] {
+        let candidate = settings
+          .with_preference("truecolor", serde_json::json!(false))
+          .unwrap()
+          .with_preference("force_tty", serde_json::json!(tty))
+          .unwrap();
+        apply_preferences(&mut ui, &mut settings, path, candidate).unwrap();
+        for layer in 0..7 {
+          ui.menu = match layer {
+            1 => Some(Menu::Main(0)),
+            2 => Some(Menu::Options),
+            3 => Some(Menu::Help(0)),
+            4 => Some(Menu::Update),
+            _ => None,
+          };
+          ui.picker = layer >= 5;
+          ui.dialog = (layer == 6).then_some(Dialog::Add {
+            field: 0,
+            values: Default::default(),
+          });
+          let mut terminal = Terminal::new(TestBackend::new(160, 48)).unwrap();
+          terminal
+            .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+            .unwrap();
+          for cell in &terminal.backend().buffer().content {
+            assert!(!matches!(cell.fg, Color::Rgb(..)));
+            assert!(!matches!(cell.bg, Color::Rgb(..)));
+            if tty {
+              assert!(cell.symbol().is_ascii(), "{}", cell.symbol());
+              assert!(!matches!(cell.fg, Color::Indexed(16..)));
+              assert!(!matches!(cell.bg, Color::Indexed(16..)));
+            }
+          }
+        }
+      }
+      let candidate = settings.with_preference("force_tty", serde_json::json!(false)).unwrap();
+      apply_preferences(&mut ui, &mut settings, path, candidate).unwrap();
+      assert_eq!(ui.theme.color("main_bg"), original);
+      assert_eq!(settings.theme().as_deref(), Some(Path::new("dracula")));
+      assert_eq!(settings.graph_symbol(), GraphSymbol::Braille);
+      assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+    }
 
     #[tokio::test]
     async fn it_renders_live_metrics_at_compact_and_reference_sizes() {

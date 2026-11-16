@@ -74,7 +74,7 @@ for tntop's black background. The bundled notices and source are in [themes](the
 
 Put custom `.theme` files in a `themes/` folder beside your selected config file.
 A user file takes precedence over a bundled theme with the same name. `Default`
-always means the built-in palette. Invalid user files report an error rather than
+and `TTY` always mean the built-in palettes. Invalid user files report an error rather than
 silently loading a different theme. Names are case-sensitive.
 
 Explicit paths still work: `theme = "themes/personal.theme"` resolves relative to
@@ -87,6 +87,11 @@ Each panel category has an override; `default` inherits the General choice.
 Braille uses four vertical dots and block uses two half-cell rows, both with
 two samples per column. TTY uses one ASCII cell per sample. Switching symbols
 changes how much history fits, without discarding the collected history.
+
+Turn off **Truecolor** in General for 256-color output. **Force TTY** uses the
+built-in 16-color TTY palette, ASCII text and TTY graphs across the whole UI.
+Turning it off restores your selected theme and graph choices. Selecting the
+`TTY` theme also enables TTY output.
 
 ## LICENSE
 

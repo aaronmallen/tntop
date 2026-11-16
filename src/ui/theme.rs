@@ -69,9 +69,13 @@ pub enum Error {
 }
 
 #[derive(Clone)]
-pub struct Theme(HashMap<String, Color>);
+pub struct Theme(HashMap<String, Color>, bool);
 
 impl Theme {
+  pub fn is_tty(&self) -> bool {
+    self.1
+  }
+
   pub fn with_background(mut self, enabled: bool) -> Self {
     if !enabled {
       self.0.insert("main_bg".into(), Color::Reset);
@@ -86,6 +90,13 @@ impl Theme {
     let directory = config.parent().unwrap_or(Path::new("."));
     if path == Path::new("Default") {
       return Ok(Self::default());
+    }
+    if path == Path::new("TTY") {
+      let mut theme = Self(Self::default().0, true);
+      for color in theme.0.values_mut() {
+        *color = super::display::indexed(*color, true);
+      }
+      return Ok(theme);
     }
     if path.components().count() == 1
       && path.extension().is_none()
@@ -123,7 +134,8 @@ impl Theme {
       Err(error) => return Err(error.into()),
     }
     names.remove("Default");
-    Ok(std::iter::once("Default".into()).chain(names).collect())
+    names.remove("TTY");
+    Ok(["Default".into(), "TTY".into()].into_iter().chain(names).collect())
   }
 
   fn parse(source: &str) -> Result<Self, Error> {
@@ -245,7 +257,7 @@ impl Default for Theme {
         colors.insert(format!("{name}_{suffix}"), Color::Rgb(r, g, b));
       }
     }
-    Self(colors)
+    Self(colors, false)
   }
 }
 
@@ -348,7 +360,7 @@ mod tests {
     fn it_discovers_user_themes_and_uses_them_before_bundled_names() {
       let directory = tempfile::tempdir().unwrap();
       let config = directory.path().join("config.toml");
-      assert_eq!(Theme::names(&config).unwrap().len(), 50);
+      assert_eq!(Theme::names(&config).unwrap().len(), 51);
       for (name, _) in BUNDLED {
         Theme::load(Some(Path::new(name)), &config).unwrap();
       }
@@ -364,8 +376,10 @@ mod tests {
       )
       .unwrap();
       std::fs::write(directory.path().join("themes/Default.theme"), "invalid").unwrap();
+      std::fs::write(directory.path().join("themes/TTY.theme"), "invalid").unwrap();
       let names = Theme::names(&config).unwrap();
-      assert_eq!(names.len(), 51);
+      assert_eq!(names.len(), 52);
+      assert!(Theme::load(Some(Path::new("TTY")), &config).unwrap().is_tty());
       assert_eq!(names.iter().filter(|name| *name == "dracula").count(), 1);
       assert_eq!(
         Theme::load(Some(Path::new("dracula")), &config)
