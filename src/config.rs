@@ -35,6 +35,12 @@ pub enum Error {
 #[derive(Clone, CopyGetters, Debug, Deserialize, Getters, Serialize)]
 #[serde(default)]
 pub struct Settings {
+  #[get_copy = "pub"]
+  mem_graphs: bool,
+  #[get_copy = "pub"]
+  show_disks: bool,
+  #[get_copy = "pub"]
+  show_arc: bool,
   #[get = "pub"]
   cpu_graph_upper: String,
   #[get = "pub"]
@@ -183,6 +189,9 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      mem_graphs: true,
+      show_disks: true,
+      show_arc: true,
       cpu_graph_upper: "auto".into(),
       cpu_graph_lower: "auto".into(),
       cpu_invert_lower: true,

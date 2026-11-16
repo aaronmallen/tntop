@@ -11,22 +11,34 @@ pub(super) fn draw(
 ) {
   let symbol = graph_symbol(settings, theme, settings.graph_symbol_mem());
   let bytes = |value| super::bytes(value, settings.base_10_sizes());
-  let [memory, storage] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
+  let [memory, storage] = if settings.show_disks() {
+    Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area)
+  } else {
+    [area, Rect::default()]
+  };
   let block = panel(" mem / zfs ", "mem_box", theme);
   let inner = block.inner(memory);
   frame.render_widget(block, memory);
   let Some(metrics) = state.history().back() else {
-    frame.render_widget(panel(" disks / pools ", "mem_box", theme), storage);
+    frame.render_widget(Paragraph::new("Memory unavailable"), inner);
+    if settings.show_disks() {
+      frame.render_widget(panel(" disks / pools ", "mem_box", theme), storage);
+    }
     return;
   };
   let total = metrics.memory().physical_memory_total() as f64;
-  let [heading, charts, foot] =
-    Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+  let [heading, charts, foot] = Layout::vertical([
+    Constraint::Length(1),
+    Constraint::Min(0),
+    Constraint::Length(u16::from(settings.show_arc())),
+  ])
+  .areas(inner);
   frame.render_widget(
     Paragraph::new(format!(" Total {}", bytes(total))).style(Style::default().fg(theme.color("title"))),
     heading,
   );
-  let rows = Layout::vertical([Constraint::Ratio(1, 4); 4]).split(charts);
+  let count = if settings.show_arc() { 4 } else { 2 };
+  let rows = Layout::vertical(vec![Constraint::Ratio(1, count); count as usize]).split(charts);
   for (index, (name, gradient)) in [
     ("Used", "used"),
     ("Available", "available"),
@@ -34,6 +46,7 @@ pub(super) fn draw(
     ("ZFS free", "free"),
   ]
   .into_iter()
+  .take(count as usize)
   .enumerate()
   {
     let area = rows[index];
@@ -43,9 +56,26 @@ pub(super) fn draw(
     let history: Vec<_> = state
       .history()
       .iter()
-      .map(|sample| value(sample, index).unwrap_or(0.0))
+      .map(|sample| value(sample, index).unwrap_or(f64::NAN))
       .collect();
     let current = value(metrics, index);
+    if !settings.mem_graphs() {
+      let row = Rect::new(area.x, area.y, area.width, 1);
+      if let Some(current) = current {
+        meter(
+          frame,
+          row,
+          name,
+          current / total,
+          &format!("{:.0}% {}", current / total * 100.0, bytes(current)),
+          gradient,
+          theme,
+        );
+      } else {
+        frame.render_widget(Paragraph::new(format!("{name} N/A")), row);
+      }
+      continue;
+    }
     let [label, chart] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     let text = current
       .map(|value| format!("{name} {:.0}% {}", value / total * 100.0, bytes(value)))
@@ -78,7 +108,9 @@ pub(super) fn draw(
     Paragraph::new(hit).style(Style::default().fg(theme.color("graph_text"))),
     foot,
   );
-  disks(frame, storage, state, pool_index, theme, settings);
+  if settings.show_disks() {
+    disks(frame, storage, state, pool_index, theme, settings);
+  }
 }
 
 fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, settings: &Settings) {
@@ -174,5 +206,85 @@ fn value(metrics: &Metrics, index: usize) -> Option<f64> {
     1 => Some(memory.physical_memory_available() as f64),
     2 => Some(memory.arc_size() as f64),
     _ => memory.arc_free_memory().map(|value| value as f64),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use serde_json::json;
+
+  use super::*;
+
+  mod draw {
+    use super::*;
+
+    #[test]
+    fn it_keeps_memory_meaning_across_graphs_meters_and_storage_visibility() {
+      let state = crate::client::fixtures::state();
+      let theme = Theme::default();
+      let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
+      for graphs in [true, false] {
+        for storage in [true, false] {
+          let settings = Settings::default()
+            .with_preference("mem_graphs", json!(graphs))
+            .unwrap()
+            .with_preference("show_disks", json!(storage))
+            .unwrap();
+          draw_frame(&mut terminal, &state, &theme, &settings);
+          let output = text(&terminal);
+          for expected in ["12.0 GiB", "4.0 GiB", "8.0 GiB", "1.0 GiB", "overlaps RAM"] {
+            assert!(output.contains(expected), "{expected} missing");
+          }
+          assert_eq!(output.contains("disks / pools"), storage);
+          if !storage {
+            assert_eq!(terminal.backend().buffer()[(60, 0)].symbol(), "─");
+          }
+          let settings = settings.with_preference("show_arc", json!(false)).unwrap();
+          draw_frame(&mut terminal, &state, &theme, &settings);
+          let text = text(&terminal);
+          assert!(text.contains("12.0 GiB"));
+          assert!(text.contains("4.0 GiB"));
+          assert!(!text.contains("ARC"));
+          assert!(!text.contains("ZFS free"));
+        }
+      }
+      let metrics = serde_json::from_value(json!({
+        "cpu":{"cpu":{"usage":0}}, "interfaces":{},
+        "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":500}
+      }))
+      .unwrap();
+      let state = crate::client::fixtures::with_metrics(metrics);
+      for graphs in [true, false] {
+        let settings = Settings::default()
+          .with_preference("mem_graphs", json!(graphs))
+          .unwrap();
+        draw_frame(&mut terminal, &state, &theme, &settings);
+        assert!(text(&terminal).contains("ZFS free N/A"));
+        assert_eq!(value(state.history().back().unwrap(), 0), Some(600.0));
+        assert_eq!(value(state.history().back().unwrap(), 2), Some(500.0));
+        assert_eq!(value(state.history().back().unwrap(), 3), None);
+      }
+    }
+
+    fn draw_frame(
+      terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>,
+      state: &State,
+      theme: &Theme,
+      settings: &Settings,
+    ) {
+      terminal
+        .draw(|frame| draw(frame, frame.area(), state, 0, theme, settings))
+        .unwrap();
+    }
+
+    fn text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {
+      terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect()
+    }
   }
 }

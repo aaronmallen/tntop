@@ -192,6 +192,13 @@ fn rows(category: usize) -> Vec<OptionRow> {
           OptionRow { key: "show_uptime", label: "Show uptime", description: "Show the existing TrueNAS uptime reading below the CPU graphs." },
         ]);
       }
+      if category == 2 {
+        rows.extend([
+          OptionRow { key: "mem_graphs", label: "Memory graphs", description: "Show history graphs for memory values. Turn off for meters with the same current values and total-RAM scale." },
+          OptionRow { key: "show_disks", label: "Show storage", description: "Show pools and aggregate disk I/O beside memory. Turn off to give memory the whole panel." },
+          OptionRow { key: "show_arc", label: "Show ARC/cache", description: "Show ARC cache size and reported ARC-free memory separately. These overlap RAM; never add them to Used or Available. Turn off for RAM-only presentation." },
+        ]);
+      }
       rows
     }
     _ => Vec::new(),

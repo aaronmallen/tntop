@@ -172,6 +172,17 @@ Kelvin or Rankine, and set a custom CPU name. An empty name uses the model
 from TrueNAS. Missing temperatures stay **N/A**. These settings use the
 readings already collected.
 
+## Memory and ZFS
+
+**Memory graphs** switches between history graphs and current-value meters.
+Both use total RAM as their scale. **Show storage** hides or shows pools and
+disk I/O; memory uses the whole panel when storage is hidden.
+
+**Show ARC/cache** adds separate ARC-size and reported ARC-free rows.
+Used RAM remains total minus available. ARC overlaps RAM, so tntop never
+adds it to Used or Available or guesses reclaimable RAM. Turn this option
+off for RAM-only display. Missing ARC-free readings show **N/A**.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
