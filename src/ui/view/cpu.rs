@@ -1,7 +1,7 @@
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, symbol: GraphSymbol) {
   let block = panel(" cpu ", "cpu_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);
@@ -40,8 +40,28 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme) 
         .fold(0.0, f64::max)
     })
     .collect();
-  graph(frame, top, &total, 100.0, "cpu", theme, false);
-  graph(frame, bottom, &busiest, 100.0, "cpu", theme, true);
+  frame.render_widget(
+    Graph {
+      values: &total,
+      maximum: 100.0,
+      gradient: "cpu",
+      theme,
+      inverted: false,
+      symbol,
+    },
+    top,
+  );
+  frame.render_widget(
+    Graph {
+      values: &busiest,
+      maximum: 100.0,
+      gradient: "cpu",
+      theme,
+      inverted: true,
+      symbol,
+    },
+    bottom,
+  );
   frame.render_widget(
     Paragraph::new("total ▲ / busiest core ▼")
       .alignment(Alignment::Center)
@@ -128,7 +148,9 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme) 
         .history()
         .iter()
         .map(|sample| sample.cpu().get(*name).map(|cpu| cpu.usage()).unwrap_or(0.0)),
-      width.saturating_sub(18) as usize,
+      width.saturating_sub(18),
+      symbol,
+      theme,
     );
     frame.render_widget(
       Paragraph::new(Line::from(vec![

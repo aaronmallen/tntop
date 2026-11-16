@@ -1,7 +1,7 @@
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, symbol: GraphSymbol) {
   let mut names: Vec<_> = state
     .history()
     .back()
@@ -54,8 +54,28 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, index: usize, t
     Layout::vertical([Constraint::Min(0), Constraint::Length(1), Constraint::Min(0)]).areas(chart);
   let max_down = down.iter().copied().fold(1024.0, f64::max);
   let max_up = up.iter().copied().fold(1024.0, f64::max);
-  graph(frame, download, &down, max_down, "download", theme, false);
-  graph(frame, upload, &up, max_up, "upload", theme, true);
+  frame.render_widget(
+    Graph {
+      values: &down,
+      maximum: max_down,
+      gradient: "download",
+      theme,
+      inverted: false,
+      symbol,
+    },
+    download,
+  );
+  frame.render_widget(
+    Graph {
+      values: &up,
+      maximum: max_up,
+      gradient: "upload",
+      theme,
+      inverted: true,
+      symbol,
+    },
+    upload,
+  );
   frame.render_widget(
     Paragraph::new("▼ download / upload ▲")
       .alignment(Alignment::Center)

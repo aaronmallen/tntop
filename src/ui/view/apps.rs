@@ -3,7 +3,7 @@ use ratatui::widgets::Cell;
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, symbol: GraphSymbol) {
   let theme = &ui.theme;
   let sort = ["cpu", "memory", "name", "state"][ui.sort];
   let title = format!(" apps / {sort} {}{} ", ui.filter, if ui.filtering { "▏" } else { "" });
@@ -72,6 +72,8 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui) {
           .iter()
           .map(|sample| sample.get(app.name()).map(|stats| *stats.cpu_usage()).unwrap_or(0.0)),
         8,
+        symbol,
+        theme,
       );
       cells.push(Cell::from(history).style(Style::default().fg(theme.color("proc_misc"))));
     }

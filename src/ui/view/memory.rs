@@ -1,7 +1,14 @@
 use super::*;
 use crate::client::{Metrics, State};
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, pool_index: usize, theme: &Theme) {
+pub(super) fn draw(
+  frame: &mut Frame,
+  area: Rect,
+  state: &State,
+  pool_index: usize,
+  theme: &Theme,
+  symbol: GraphSymbol,
+) {
   let [memory, storage] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
   let block = panel(" mem / zfs ", "mem_box", theme);
   let inner = block.inner(memory);
@@ -46,7 +53,17 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, pool_index: usi
       label,
     );
     if current.is_some() {
-      graph(frame, chart, &history, total, gradient, theme, false);
+      frame.render_widget(
+        Graph {
+          values: &history,
+          maximum: total,
+          gradient,
+          theme,
+          inverted: false,
+          symbol,
+        },
+        chart,
+      );
     }
   }
   let hit = metrics
@@ -59,10 +76,10 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, pool_index: usi
     Paragraph::new(hit).style(Style::default().fg(theme.color("graph_text"))),
     foot,
   );
-  disks(frame, storage, state, pool_index, theme);
+  disks(frame, storage, state, pool_index, theme, symbol);
 }
 
-fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme) {
+fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, symbol: GraphSymbol) {
   let block = panel(" disks / pools ", "mem_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);
@@ -125,7 +142,17 @@ fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &The
     .iter()
     .map(|sample| sample.disks().as_ref().map(|disks| disks.busy()).unwrap_or(0.0))
     .collect();
-  graph(frame, chart, &history, 100.0, "used", theme, false);
+  frame.render_widget(
+    Graph {
+      values: &history,
+      maximum: 100.0,
+      gradient: "used",
+      theme,
+      inverted: false,
+      symbol,
+    },
+    chart,
+  );
   frame.render_widget(
     Paragraph::new(vec![
       Line::from(format!("R {}/s", bytes(disks.read_bytes()))),

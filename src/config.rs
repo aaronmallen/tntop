@@ -1,4 +1,5 @@
 mod env;
+mod graph;
 mod server;
 
 use std::{
@@ -9,6 +10,7 @@ use std::{
 
 use compote::{Compote, Env, Serialized, Toml};
 use getset::{CopyGetters, Getters};
+pub use graph::GraphSymbol;
 use serde::{Deserialize, Serialize};
 pub use server::Server;
 
@@ -42,6 +44,16 @@ pub struct Settings {
   #[get_copy = "pub"]
   theme_background: bool,
   #[get_copy = "pub"]
+  graph_symbol: GraphSymbol,
+  #[get_copy = "pub"]
+  graph_symbol_cpu: GraphSymbol,
+  #[get_copy = "pub"]
+  graph_symbol_mem: GraphSymbol,
+  #[get_copy = "pub"]
+  graph_symbol_net: GraphSymbol,
+  #[get_copy = "pub"]
+  graph_symbol_apps: GraphSymbol,
+  #[get_copy = "pub"]
   update_ms: u64,
 }
 
@@ -69,6 +81,9 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    if self.graph_symbol == GraphSymbol::Default {
+      return Err(Error::Invalid("graph_symbol must be braille, block or tty".into()));
+    }
     if !(100..=86_400_000).contains(&self.update_ms) {
       return Err(Error::Invalid("update_ms must be between 100 and 86400000".into()));
     }
@@ -91,6 +106,11 @@ impl Default for Settings {
       disable_mouse: false,
       theme: None,
       theme_background: true,
+      graph_symbol: GraphSymbol::Braille,
+      graph_symbol_cpu: GraphSymbol::Default,
+      graph_symbol_mem: GraphSymbol::Default,
+      graph_symbol_net: GraphSymbol::Default,
+      graph_symbol_apps: GraphSymbol::Default,
       update_ms: 2000,
     }
   }

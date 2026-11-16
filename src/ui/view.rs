@@ -8,11 +8,11 @@ use ratatui::{
   layout::{Alignment, Constraint, Layout, Rect},
   style::{Color, Modifier, Style},
   text::{Line, Span},
-  widgets::{Block, BorderType, Paragraph, Row, Table, TableState, Wrap},
+  widgets::{Block, BorderType, Paragraph, Row, Table, TableState, Widget, Wrap},
 };
 
 use super::{Ui, theme::Theme};
-use crate::config::Settings;
+use crate::config::{GraphSymbol, Settings};
 
 pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   ui.hits.clear();
@@ -95,12 +95,38 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .alignment(Alignment::Right),
     clock,
   );
-  cpu::draw(frame, cpu, &state, theme);
+  cpu::draw(
+    frame,
+    cpu,
+    &state,
+    theme,
+    settings.graph_symbol_cpu().resolve(settings.graph_symbol()),
+  );
   let [left, apps] = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(bottom);
   let [memory, network] = Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).areas(left);
-  memory::draw(frame, memory, &state, ui.pool, theme);
-  network::draw(frame, network, &state, ui.interface, theme);
-  apps::draw(frame, apps, &state, ui);
+  memory::draw(
+    frame,
+    memory,
+    &state,
+    ui.pool,
+    theme,
+    settings.graph_symbol_mem().resolve(settings.graph_symbol()),
+  );
+  network::draw(
+    frame,
+    network,
+    &state,
+    ui.interface,
+    theme,
+    settings.graph_symbol_net().resolve(settings.graph_symbol()),
+  );
+  apps::draw(
+    frame,
+    apps,
+    &state,
+    ui,
+    settings.graph_symbol_apps().resolve(settings.graph_symbol()),
+  );
   let status = match state.error() {
     Some(error) => format!(" {error} | last sample {}", age(*state.updated_at())),
     None => format!(
@@ -161,44 +187,93 @@ fn bytes(mut value: f64) -> String {
   unreachable!()
 }
 
-fn graph(frame: &mut Frame, area: Rect, values: &[f64], maximum: f64, gradient: &str, theme: &Theme, inverted: bool) {
-  let capacity = area.width as usize * 2;
-  let start = values.len().saturating_sub(capacity);
-  let offset = capacity.saturating_sub(values.len());
-  for x in 0..area.width {
-    for y in 0..area.height {
-      let mut bits = 0u32;
-      for dx in 0..2 {
-        let index = x as usize * 2 + dx;
-        let value = index
-          .checked_sub(offset)
-          .and_then(|index| values.get(start + index))
-          .copied()
-          .unwrap_or(0.0);
-        let height = (value / maximum.max(1.0)).clamp(0.0, 1.0) * area.height as f64 * 4.0;
-        for dy in 0..4 {
-          let pixel = if inverted {
-            y as usize * 4 + dy
+struct Graph<'a> {
+  values: &'a [f64],
+  maximum: f64,
+  gradient: &'a str,
+  theme: &'a Theme,
+  inverted: bool,
+  symbol: GraphSymbol,
+}
+
+impl Graph<'_> {
+  fn cell(&self, width: u16, height: u16, x: u16, y: u16) -> char {
+    let Self {
+      values,
+      maximum,
+      inverted,
+      symbol,
+      ..
+    } = self;
+    let columns = symbol.samples_per_cell();
+    let rows = match symbol {
+      GraphSymbol::Tty => 1,
+      GraphSymbol::Block => 2,
+      _ => 4,
+    };
+    let capacity = width as usize * columns;
+    let start = values.len().saturating_sub(capacity);
+    let offset = capacity.saturating_sub(values.len());
+    let mut bits = 0u32;
+    for dx in 0..columns {
+      let index = x as usize * columns + dx;
+      let value = index
+        .checked_sub(offset)
+        .and_then(|index| values.get(start + index))
+        .copied()
+        .unwrap_or(0.0);
+      let filled = (value / maximum.max(1.0)).clamp(0.0, 1.0) * height as f64 * rows as f64;
+      for dy in 0..rows {
+        let pixel = if *inverted {
+          y as usize * rows + dy
+        } else {
+          (height - y - 1) as usize * rows + (rows - 1 - dy)
+        };
+        if (pixel as f64) < filled {
+          let bit = if matches!(symbol, GraphSymbol::Braille | GraphSymbol::Default) {
+            [[0, 1, 2, 6], [3, 4, 5, 7]][dx][dy]
           } else {
-            (area.height - y - 1) as usize * 4 + (3 - dy)
+            dx * rows + dy
           };
-          if (pixel as f64) < height {
-            bits |= 1 << [[0, 1, 2, 6], [3, 4, 5, 7]][dx][dy];
-          }
+          bits |= 1 << bit;
         }
       }
-      let ratio = if inverted {
-        y as f64 / area.height.max(1) as f64
-      } else {
-        1.0 - y as f64 / area.height.max(1) as f64
-      };
-      frame.buffer_mut()[(area.x + x, area.y + y)]
-        .set_char(if bits == 0 {
+    }
+    match symbol {
+      GraphSymbol::Tty => {
+        if bits == 0 {
+          ' '
+        } else {
+          '#'
+        }
+      }
+      GraphSymbol::Block => [
+        ' ', '▘', '▖', '▌', '▝', '▀', '▞', '▛', '▗', '▚', '▄', '▙', '▐', '▜', '▟', '█',
+      ][bits as usize],
+      _ => {
+        if bits == 0 {
           ' '
         } else {
           char::from_u32(0x2800 + bits).unwrap_or(' ')
-        })
-        .set_fg(theme.gradient(gradient, ratio));
+        }
+      }
+    }
+  }
+}
+
+impl Widget for Graph<'_> {
+  fn render(self, area: Rect, buffer: &mut ratatui::buffer::Buffer) {
+    for x in 0..area.width {
+      for y in 0..area.height {
+        let ratio = if self.inverted {
+          y as f64 / area.height.max(1) as f64
+        } else {
+          1.0 - y as f64 / area.height.max(1) as f64
+        };
+        buffer[(area.x + x, area.y + y)]
+          .set_char(self.cell(area.width, area.height, x, y))
+          .set_fg(self.theme.gradient(self.gradient, ratio));
+      }
     }
   }
 }
@@ -304,13 +379,17 @@ fn picker(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   );
 }
 
-fn sparkline(values: impl IntoIterator<Item = f64>, width: usize) -> String {
+fn sparkline(values: impl IntoIterator<Item = f64>, width: u16, symbol: GraphSymbol, theme: &Theme) -> String {
   let values: Vec<_> = values.into_iter().collect();
-  let mut line = " ".repeat(width.saturating_sub(values.len()));
-  for value in values.iter().skip(values.len().saturating_sub(width)) {
-    line.push([' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'][(value.clamp(0.0, 100.0) * 0.08).ceil() as usize]);
-  }
-  line
+  let graph = Graph {
+    values: &values,
+    maximum: 100.0,
+    gradient: "cpu",
+    theme,
+    inverted: false,
+    symbol,
+  };
+  (0..width).map(|x| graph.cell(width, 1, x, 0)).collect()
 }
 
 #[cfg(test)]
@@ -371,7 +450,7 @@ mod tests {
         let state = fixtures::state();
         ui.filter = "forge".into();
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
           .unwrap();
         let output = text(&terminal);
         assert!(output.contains("forgejo"));
@@ -381,7 +460,7 @@ mod tests {
         ui.sort = 2;
         ui.app_row = 1;
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
           .unwrap();
         assert!(text(&terminal).contains("jellyfin  10.11"));
       }
@@ -392,7 +471,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(120, 25)).unwrap();
         let mut ui = ui();
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
           .unwrap();
         assert!(text(&terminal).contains("N/A"));
         assert!(text(&terminal).contains("APPS_READ"));
@@ -479,25 +558,61 @@ mod tests {
     #[test]
     fn it_right_aligns_samples_and_mirrors_uploads() {
       let mut terminal = Terminal::new(TestBackend::new(4, 2)).unwrap();
-      for inverted in [false, true] {
-        terminal
-          .draw(|frame| {
-            super::super::graph(
-              frame,
-              frame.area(),
-              &[25.0, 25.0],
-              100.0,
-              "cpu",
-              &Theme::default(),
-              inverted,
-            )
-          })
-          .unwrap();
-        let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(0, 0)].symbol(), " ");
-        let (filled, empty) = if inverted { (0, 1) } else { (1, 0) };
-        assert_ne!(buffer[(3, filled)].symbol(), " ");
-        assert_eq!(buffer[(3, empty)].symbol(), " ");
+      for symbol in [GraphSymbol::Braille, GraphSymbol::Block, GraphSymbol::Tty] {
+        for inverted in [false, true] {
+          terminal
+            .draw(|frame| {
+              frame.render_widget(
+                Graph {
+                  values: &[25.0, 25.0],
+                  maximum: 100.0,
+                  gradient: "cpu",
+                  theme: &Theme::default(),
+                  inverted,
+                  symbol,
+                },
+                frame.area(),
+              )
+            })
+            .unwrap();
+          let buffer = terminal.backend().buffer();
+          assert_eq!(buffer[(0, 0)].symbol(), " ");
+          let (filled, empty) = if inverted { (0, 1) } else { (1, 0) };
+          assert_ne!(buffer[(3, filled)].symbol(), " ");
+          assert_eq!(buffer[(3, empty)].symbol(), " ");
+        }
+      }
+    }
+
+    #[test]
+    fn it_uses_each_symbols_capacity_and_keeps_history_when_switching() {
+      let theme = Theme::default();
+      let values = [100.0, 0.0, 0.0, 0.0];
+      for symbol in [
+        GraphSymbol::Braille,
+        GraphSymbol::Block,
+        GraphSymbol::Tty,
+        GraphSymbol::Braille,
+      ] {
+        let line = sparkline(values, 2, symbol, &theme);
+        assert_eq!(line.chars().count(), 2);
+        assert_eq!(line == "  ", symbol == GraphSymbol::Tty);
+        assert_eq!(sparkline([f64::NAN, 0.0], 2, symbol, &theme), "  ");
+        assert_eq!(sparkline([], 0, symbol, &theme), "");
+        for (width, height) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+          let area = Rect::new(0, 0, width, height);
+          let mut buffer = ratatui::buffer::Buffer::empty(area);
+          Graph {
+            values: &[],
+            maximum: 0.0,
+            gradient: "cpu",
+            theme: &theme,
+            inverted: true,
+            symbol,
+          }
+          .render(area, &mut buffer);
+          assert!(buffer.content.iter().all(|cell| cell.symbol() == " "));
+        }
       }
     }
   }

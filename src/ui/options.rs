@@ -77,7 +77,22 @@ fn rows(category: usize) -> Vec<OptionRow> {
         label: "Redraw interval (ms)",
         description: "Redraw every 100 to 86400000 ms. The API has a minimum collection interval of two seconds.",
       },
+      OptionRow {
+        key: "graph_symbol",
+        label: "Graph symbol",
+        description: "Enter cycles braille, block and tty. Braille and block show two samples per column; tty shows one. Panel overrides can inherit this choice.",
+      },
     ],
+    1..=4 => vec![OptionRow {
+      key: [
+        "graph_symbol_cpu",
+        "graph_symbol_mem",
+        "graph_symbol_net",
+        "graph_symbol_apps",
+      ][category - 1],
+      label: "Graph symbol",
+      description: "Enter cycles default, braille, block and tty. Default inherits the General setting. Applies to charts and sparklines without clearing history.",
+    }],
     _ => Vec::new(),
   }
 }
@@ -226,6 +241,21 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 }
                 Err(error) => ui.options.error = Some(error.to_string()),
               }
+            } else if row.key.starts_with("graph_symbol") {
+              let choices = if row.key == "graph_symbol" {
+                &["braille", "block", "tty"][..]
+              } else {
+                &["default", "braille", "block", "tty"][..]
+              };
+              let index = choices
+                .iter()
+                .position(|choice| values[row.key] == *choice)
+                .unwrap_or(0);
+              let result = settings
+                .with_preference(row.key, Value::String(choices[(index + 1) % choices.len()].into()))
+                .map_err(super::Error::from)
+                .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
+              ui.options.error = result.err().map(|error| error.to_string());
             } else if let Value::Bool(value) = values[row.key] {
               let result = settings
                 .with_preference(row.key, Value::Bool(!value))
@@ -400,6 +430,43 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 mod tests {
   use super::*;
 
+  #[test]
+  fn it_cycles_graph_choices_and_inherits_the_global_style() {
+    use crate::config::GraphSymbol;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    let mut settings = Settings::default();
+    let before = settings.clone();
+    let mut ui = Ui::default();
+    ui.options.row = rows(0).iter().position(|row| row.key == "graph_symbol").unwrap();
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert_eq!(settings.graph_symbol(), GraphSymbol::Block);
+    assert_eq!(
+      settings.graph_symbol_cpu().resolve(settings.graph_symbol()),
+      GraphSymbol::Block
+    );
+    handle(&mut ui, &mut settings, &path, KeyCode::Tab);
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert_eq!(
+      settings.graph_symbol_cpu().resolve(settings.graph_symbol()),
+      GraphSymbol::Braille
+    );
+    crate::config::save_preferences(&path, &before, &settings).unwrap();
+    let loaded = crate::config::load(&path).unwrap();
+    assert_eq!(loaded.graph_symbol(), GraphSymbol::Block);
+    assert_eq!(loaded.graph_symbol_cpu(), GraphSymbol::Braille);
+    assert!(
+      settings
+        .with_preference("graph_symbol", Value::String("default".into()))
+        .is_err()
+    );
+    assert!(
+      settings
+        .with_preference("graph_symbol_cpu", Value::String("unknown".into()))
+        .is_err()
+    );
+  }
+
   #[tokio::test]
   async fn it_previews_cancels_and_saves_themes_without_replacing_sessions() {
     use ratatui::style::Color;
@@ -489,7 +556,7 @@ mod tests {
     let mut settings = Settings::default();
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("config.toml");
-    handle(&mut ui, &mut settings, &path, KeyCode::End);
+    ui.options.row = rows(0).iter().position(|row| row.key == "update_ms").unwrap();
     handle(&mut ui, &mut settings, &path, KeyCode::Enter);
     ui.options.editing = Some(Input::new("0"));
     handle(&mut ui, &mut settings, &path, KeyCode::Enter);

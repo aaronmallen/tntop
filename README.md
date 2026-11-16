@@ -80,6 +80,14 @@ silently loading a different theme. Names are case-sensitive.
 Explicit paths still work: `theme = "themes/personal.theme"` resolves relative to
 the selected config file, and absolute paths remain absolute.
 
+## Graphs
+
+**Options → General → Graph symbol** cycles `braille`, `block` and `tty`.
+Each panel category has an override; `default` inherits the General choice.
+Braille uses four vertical dots and block uses two half-cell rows, both with
+two samples per column. TTY uses one ASCII cell per sample. Switching symbols
+changes how much history fits, without discarding the collected history.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
