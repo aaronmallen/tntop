@@ -93,16 +93,45 @@ fn rows(category: usize) -> Vec<OptionRow> {
         description: "Enter cycles braille, block and tty. Braille and block show two samples per column; tty shows one. Panel overrides can inherit this choice.",
       },
     ],
-    1..=4 => vec![OptionRow {
-      key: [
-        "graph_symbol_cpu",
-        "graph_symbol_mem",
-        "graph_symbol_net",
-        "graph_symbol_apps",
-      ][category - 1],
-      label: "Graph symbol",
-      description: "Enter cycles default, braille, block and tty. Default inherits the General setting. Applies to charts and sparklines without clearing history.",
-    }],
+    1..=4 => {
+      let mut rows = vec![
+        OptionRow {
+          key: [
+            "graph_symbol_cpu",
+            "graph_symbol_mem",
+            "graph_symbol_net",
+            "graph_symbol_apps",
+          ][category - 1],
+          label: "Graph symbol",
+          description: "Enter cycles default, braille, block and tty. Default inherits the General setting. Applies to charts and sparklines without clearing history.",
+        },
+        OptionRow {
+          key: ["show_cpu", "show_mem", "show_net", "show_apps"][category - 1],
+          label: "Show panel",
+          description: "Show this panel on the dashboard. Keys 1–4 toggle panels. Hidden panels keep collecting data.",
+        },
+      ];
+      let position = match category {
+        1 => Some(OptionRow {
+          key: "cpu_bottom",
+          label: "CPU at bottom",
+          description: "Place the CPU panel below the other panels.",
+        }),
+        2 => Some(OptionRow {
+          key: "mem_below_net",
+          label: "Memory below network",
+          description: "Place Memory/ZFS below Network. Storage stays inside Memory/ZFS.",
+        }),
+        4 => Some(OptionRow {
+          key: "apps_left",
+          label: "Apps on left",
+          description: "Place Apps to the left of Memory/ZFS and Network.",
+        }),
+        _ => None,
+      };
+      rows.extend(position);
+      rows
+    }
     _ => Vec::new(),
   }
 }

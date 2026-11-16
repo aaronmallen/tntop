@@ -57,13 +57,8 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .as_ref()
     .map(|session| session.receiver.borrow().clone())
     .unwrap_or_default();
-  let [header, cpu, bottom, footer] = Layout::vertical([
-    Constraint::Length(1),
-    Constraint::Percentage(32),
-    Constraint::Min(13),
-    Constraint::Length(2),
-  ])
-  .areas(frame.area());
+  let [header, body, footer] =
+    Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(2)]).areas(frame.area());
   let [heading, clock] = Layout::horizontal([Constraint::Min(1), Constraint::Length(13)]).areas(header);
   frame.render_widget(
     Paragraph::new(Line::from(vec![
@@ -104,26 +99,43 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       symbol.resolve(settings.graph_symbol())
     }
   };
-  cpu::draw(frame, cpu, &state, theme, symbol(settings.graph_symbol_cpu()));
-  let [left, apps] = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(bottom);
-  let [memory, network] = Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).areas(left);
-  memory::draw(
-    frame,
-    memory,
-    &state,
-    ui.pool,
-    theme,
-    symbol(settings.graph_symbol_mem()),
-  );
-  network::draw(
-    frame,
-    network,
-    &state,
-    ui.interface,
-    theme,
-    symbol(settings.graph_symbol_net()),
-  );
-  apps::draw(frame, apps, &state, ui, symbol(settings.graph_symbol_apps()));
+  let [cpu, memory, network, apps] = super::layout::areas(body, settings);
+  if !cpu.is_empty() {
+    cpu::draw(frame, cpu, &state, theme, symbol(settings.graph_symbol_cpu()));
+  }
+  if !memory.is_empty() {
+    memory::draw(
+      frame,
+      memory,
+      &state,
+      ui.pool,
+      theme,
+      symbol(settings.graph_symbol_mem()),
+    );
+  }
+  if !network.is_empty() {
+    network::draw(
+      frame,
+      network,
+      &state,
+      ui.interface,
+      theme,
+      symbol(settings.graph_symbol_net()),
+    );
+  }
+  if !apps.is_empty() {
+    apps::draw(frame, apps, &state, ui, symbol(settings.graph_symbol_apps()));
+  }
+  if [cpu, memory, network, apps].into_iter().all(Rect::is_empty) {
+    frame.render_widget(
+      Paragraph::new("No panels selected. Press 1–4 to show panels, or m for the menu.")
+        .centered()
+        .wrap(Wrap {
+          trim: true,
+        }),
+      body,
+    );
+  }
   let status = match state.error() {
     Some(error) => format!(" {error} | last sample {}", age(*state.updated_at())),
     None => format!(
@@ -138,6 +150,10 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     &[
       ("m menu", ratatui::crossterm::event::KeyCode::Char('m')),
       ("s servers", ratatui::crossterm::event::KeyCode::Char('s')),
+      ("1 cpu", ratatui::crossterm::event::KeyCode::Char('1')),
+      ("2 mem", ratatui::crossterm::event::KeyCode::Char('2')),
+      ("3 net", ratatui::crossterm::event::KeyCode::Char('3')),
+      ("4 apps", ratatui::crossterm::event::KeyCode::Char('4')),
       ("/ filter", ratatui::crossterm::event::KeyCode::Char('/')),
       ("← sort", ratatui::crossterm::event::KeyCode::Left),
       ("sort →", ratatui::crossterm::event::KeyCode::Right),
@@ -478,6 +494,47 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[tokio::test]
+    async fn it_toggles_all_panels_and_resizes_without_replacing_the_session() {
+      let mut settings = settings();
+      let mut ui = ui();
+      let (_, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      let id = ui.sessions[0].as_ref().unwrap().task.id();
+      let history = ui.sessions[0].as_ref().unwrap().receiver.borrow().history().len();
+      for mask in 0..16 {
+        for (index, key) in ["show_cpu", "show_mem", "show_net", "show_apps"].iter().enumerate() {
+          let current = settings.preferences().unwrap()[key].as_bool().unwrap();
+          if current != (mask & (1 << index) != 0) {
+            assert!(crate::ui::layout::handle(
+              &mut ui,
+              &mut settings,
+              std::path::Path::new("config.toml"),
+              ratatui::crossterm::event::KeyCode::Char(char::from(b'1' + index as u8))
+            ));
+          }
+        }
+        for (width, height) in [(20, 4), (70, 24), (160, 48)] {
+          let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+          terminal
+            .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+            .unwrap();
+          if width >= 70 && mask == 0 {
+            assert!(text(&terminal).contains("No panels selected"));
+          }
+        }
+      }
+      assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+      assert_eq!(
+        ui.sessions[0].as_ref().unwrap().receiver.borrow().history().len(),
+        history
+      );
+      assert_eq!(ui.selected, 0);
+    }
 
     #[tokio::test]
     async fn it_applies_display_modes_to_panels_and_every_overlay_then_restores_choices() {

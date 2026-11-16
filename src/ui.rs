@@ -2,6 +2,7 @@ mod banner;
 mod display;
 mod help;
 mod input;
+mod layout;
 mod manager;
 mod menu;
 mod mouse;
@@ -250,6 +251,9 @@ async fn run_terminal(
         if quit {
           return Ok(());
         }
+        continue;
+      }
+      if !ui.picker && layout::handle(ui, settings, config_path, key.code) {
         continue;
       }
       match key.code {

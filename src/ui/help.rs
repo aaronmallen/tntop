@@ -43,6 +43,7 @@ fn lines() -> Vec<&'static str> {
     "  Tab / Up / Down   Switch fields in the add-server dialog",
     "",
     "Dashboard",
+    "  1 / 2 / 3 / 4     Toggle CPU / Memory / Network / Apps",
     "  Up / Down         Select an app",
     "  Left / Right      Change app sort order",
     "  /                 Edit the app filter",

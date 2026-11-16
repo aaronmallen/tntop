@@ -48,6 +48,20 @@ pub struct Settings {
   #[get_copy = "pub"]
   force_tty: bool,
   #[get_copy = "pub"]
+  show_cpu: bool,
+  #[get_copy = "pub"]
+  show_mem: bool,
+  #[get_copy = "pub"]
+  show_net: bool,
+  #[get_copy = "pub"]
+  show_apps: bool,
+  #[get_copy = "pub"]
+  cpu_bottom: bool,
+  #[get_copy = "pub"]
+  apps_left: bool,
+  #[get_copy = "pub"]
+  mem_below_net: bool,
+  #[get_copy = "pub"]
   graph_symbol: GraphSymbol,
   #[get_copy = "pub"]
   graph_symbol_cpu: GraphSymbol,
@@ -112,6 +126,13 @@ impl Default for Settings {
       theme_background: true,
       truecolor: true,
       force_tty: false,
+      show_cpu: true,
+      show_mem: true,
+      show_net: true,
+      show_apps: true,
+      cpu_bottom: false,
+      apps_left: false,
+      mem_below_net: false,
       graph_symbol: GraphSymbol::Braille,
       graph_symbol_cpu: GraphSymbol::Default,
       graph_symbol_mem: GraphSymbol::Default,

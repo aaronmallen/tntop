@@ -93,6 +93,14 @@ built-in 16-color TTY palette, ASCII text and TTY graphs across the whole UI.
 Turning it off restores your selected theme and graph choices. Selecting the
 `TTY` theme also enables TTY output.
 
+## Panels
+
+Press **1–4** to toggle CPU, Memory/ZFS, Network and Apps. Each panel's Options
+category also has a **Show panel** setting. CPU can sit above or below the other
+panels, Apps can sit on either side, and Memory/ZFS can sit above or below Network.
+Storage stays inside Memory/ZFS. Hidden panels keep their sessions and history;
+the menu remains available when every panel is hidden.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
