@@ -61,9 +61,91 @@ HTTPS uses encrypted WebSockets and the configured CA certificate or trusted
 certificate fingerprint. HTTP uses plain WebSockets and skips certificate checks
 and trust prompts. HTTP sends your API key and server data without encryption.
 
+## Start and configure
+
+Run `tntop` in a terminal at least 70 columns by 24 rows. On first run,
+use **a** in Servers to add a server and enter its API key. tntop stores
+keys in the OS keyring, not the config file. It opens a sole configured
+server automatically; otherwise choose one from Servers.
+
+```sh
+tntop --server home
+tntop --config ./config.toml
+tntop --preset 2
+tntop --help
+```
+
+The default file is `tntop/config.toml` under your platform's config
+directory. `--config` selects another file. Defaults, TOML, then
+`TNTOP_` environment values set preferences, in that order. For example,
+`TNTOP_UPDATE_MS=1000` sets the redraw interval. Environment overrides
+stay out of saved preferences.
+
+Options applies valid changes at once. **Save on exit** controls saving
+display preferences; server and certificate changes save when accepted.
+**Ctrl-R** reloads display preferences without replacing server sessions.
+Invalid changes keep the prior settings. Saves preserve server entries,
+comments and unrelated config values.
+
+## Menus and controls
+
+Main contains **Options, Help, Servers, Update and Quit**. Options groups
+settings under **General, CPU, Memory, Network and Apps**. General owns
+themes, presets, display modes, input, clock, refresh, logging and saving.
+Each panel category owns its display settings.
+
+| Where | Keys | Action |
+| --- | --- | --- |
+| Navigation | m / Esc | Open Main; Esc closes the active layer first |
+| Navigation | F2 / o | Open Options |
+| Navigation | F1 / ? / h / H | Open Help; h navigates when Vim keys are on |
+| Navigation | s | Open Servers |
+| Dashboard / Main / Servers | q | Quit |
+| Anywhere | Ctrl-C | Quit, including during text editing |
+| Outside editors | Ctrl-R | Reload preferences |
+| Dashboard | 1 / 2 / 3 / 4 | Toggle CPU / Memory / Network / Apps |
+| Dashboard | p / P | Next / previous enabled preset |
+| Dashboard | + / - | Change redraw interval by 100 ms |
+| Dashboard | [ / ] | Previous / next matching pool |
+| Dashboard | b / n | Previous / next network interface |
+| Dashboard | a / y | Toggle automatic / synchronized network scales |
+| Dashboard | z | Toggle a local baseline for session estimates |
+| Apps | Up / Down | Select an app |
+| Apps | Page Up / Page Down, Home / End | Page, or select first / last |
+| Apps | Left / Right, r | Cycle sort field, or reverse order |
+| Apps | Enter, f, Space | Details, follow details, pause presentation |
+| Apps | /, Delete | Edit filter, or clear it outside text editing |
+| App filter | Backspace, Enter / Esc | Remove a letter, or finish editing |
+| Servers | Up / Down, Enter | Select, then open a server |
+| Servers | a / d | Add / delete a server |
+| Servers | e / t | Change API key / review HTTPS certificate |
+| Server form | Tab / Up / Down | Switch fields |
+| Main | Up / Down, Enter | Select and open an entry |
+| Options | Tab / Shift-Tab, Left / Right | Change category |
+| Options | Up / Down, Page Up / Down, Home / End | Select a setting |
+| Options | Enter / Space | Toggle, cycle or edit the selected setting |
+| Option edit | Enter / Esc | Accept / cancel |
+| Theme preview | Arrows, Home / End, Enter / Esc | Preview, then keep / cancel |
+| Help | Up / Down, Page Up / Down, Home / End | Scroll |
+
+Server and Options text fields support Left/Right, Home/End and
+Backspace/Delete. Typing inserts at the cursor; long fields scroll.
+Editors consume shortcuts before dashboard actions, so letters such as
+`q`, `f` and `h` remain text. The app filter accepts literal letters and
+Backspace; Enter/Esc leaves it.
+
+Click Main choices, Options categories and settings, theme-preview
+controls, header preset arrows and panel-border controls. Hotkeys use a
+highlight color within each control. Click a panel title to hide it;
+keys **1–4** or Options show it again. Click a server
+to open it or an app row to select it. Scroll over lists and Help.
+**Disable mouse** releases capture for terminal text selection.
+
 ## Themes
 
 All 49 bundled btop themes work offline, with no theme files to install.
+Installers and Main → Update replace a binary that embeds the themes;
+neither needs to copy a theme folder. Your custom theme files stay separate.
 Open **Options → General → Color theme** and press Enter to browse them.
 Arrows preview a theme, Enter keeps it, and Escape restores the prior theme.
 Accepted choices follow **Save on exit**. **Theme background** switches between
@@ -124,6 +206,17 @@ the active preset, or **manual** after a layout change. `tntop --preset 2` selec
 a preset at startup. **Disable presets** in General accepts `off`, `default`
 (preset 0), `custom` (presets 1–9) or `all`. Cycling skips disabled choices;
 startup selection reports an error for a disabled or missing preset.
+
+For example, replace the defaults with two custom layouts:
+
+```toml
+presets = "cpu:0:block,mem:1:default,net:1:tty apps:1:braille"
+disable_presets = "off"
+```
+
+`tntop --preset 1` selects CPU, Memory and Network; `--preset 2` selects
+Apps alone. Preset 0 remains the all-panel layout. `proc` and `apps`
+refer to the same panel, so do not put both in one layout.
 
 ## Appearance and input
 
@@ -231,6 +324,23 @@ state, update, CPU, memory, network and disk-total readings.
 continue; press it again to show current data. Switching servers clears
 pause and follow. Use **Page Up/Down**, **Home/End** to navigate, and
 **Delete** outside text editing to clear the app filter.
+
+## Scope and unavailable data
+
+tntop displays existing TrueNAS CPU, RAM/ARC, pool, aggregate disk,
+network and app readings. Denied or missing readings show unavailable
+states; a stale reading keeps its age or error.
+
+These btop features do not apply to the current data:
+
+- GPU and battery panels; CPU frequency, wattage, sensor discovery/remapping.
+- Swap, physical-device or mount-table filters, fstab and dataset controls.
+- Raw processes, PIDs, users, threads, process trees and kernel-process filters.
+- Signals, renice, process termination and app start/stop/restart.
+
+App disk totals come from app counters. Disk-panel I/O is aggregate across
+disks, not a measurement of the selected pool. Network totals estimate this
+session from sampled rates, and ARC rows overlap RAM.
 
 ## LICENSE
 

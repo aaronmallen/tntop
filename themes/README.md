@@ -20,6 +20,6 @@ or use another filename without `.theme`. `Default` selects tntop's built-in
 colors. No theme-folder installation is needed.
 
 User themes live in `themes/` beside the selected config file. A user theme with
-the same name overrides the bundled copy; `Default` stays reserved. Names are
+the same name overrides the bundled copy; `Default` and `TTY` stay reserved. Names are
 case-sensitive and appear once in the sorted catalog. Explicit paths still work,
 including paths relative to the config file, such as `theme = "themes/mine.theme"`.
