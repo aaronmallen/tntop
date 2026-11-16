@@ -2,6 +2,8 @@
   "Exclude": [
     "^\\.mise/",
     "^\\.mise-data/",
-    "^LICENSE$"
+    "^LICENSE$",
+    "^themes/.*\\.theme$",
+    "^themes/LICENSE$"
   ]
 }

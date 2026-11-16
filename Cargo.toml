@@ -2,7 +2,7 @@
 categories = ["command-line-utilities"]
 description = "A TUI to help you monitor resources and services on your TrueNas server."
 edition = "2024"
-include = ["CHANGELOG.md", "LICENSE", "README.md", "src/**"]
+include = ["CHANGELOG.md", "LICENSE", "README.md", "src/**", "themes/**"]
 keywords = ["monitoring", "TrueNas", "tui"]
 license = "AGPL-3.0-or-later"
 name = "tntop"
