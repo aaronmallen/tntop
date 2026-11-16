@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+#MISE description="Check installer platform selection and safe replacement"
+set -e
+python3 tests/install_test.py

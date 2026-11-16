@@ -4,5 +4,6 @@
 
 set -e
 
-shfmt -d scripts
+shfmt -d scripts assets/install.sh
+shellcheck assets/install.sh
 shfmt -f scripts | xargs shellcheck

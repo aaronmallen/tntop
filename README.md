@@ -5,6 +5,42 @@ A [TUI] to monitor resources and apps on your [TrueNAS] server from a terminal.
 > [!WARNING]
 > tntop is in active development. Features and configuration may change without notice, and you may encounter bugs.
 
+## Install
+
+Bash or Zsh:
+
+```sh
+curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh -o /tmp/tntop-install.sh
+sh /tmp/tntop-install.sh
+```
+
+Fish:
+
+```fish
+curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh -o /tmp/tntop-install.sh
+sh /tmp/tntop-install.sh
+```
+
+PowerShell 7 on Windows:
+
+```powershell
+Invoke-WebRequest https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.ps1 -OutFile "$env:TEMP\tntop-install.ps1"
+& "$env:TEMP\tntop-install.ps1"
+```
+
+The installers select the latest stable release and verify its SHA-256 checksum.
+Published targets are macOS ARM64, Linux x86-64 and Windows x86-64. Other platforms
+must build from source. Run the installer again to update.
+
+To choose a version or directory, use `sh /tmp/tntop-install.sh 0.1.0 "$HOME/.local/bin"`,
+or `& "$env:TEMP\tntop-install.ps1" -Version 0.1.0 -Directory "$env:LOCALAPPDATA\tntop\bin"`.
+Defaults are `~/.local/bin` on Unix and `%LOCALAPPDATA%\tntop\bin` on Windows.
+The installer prints PATH setup guidance when needed.
+
+Linux needs a running, unlocked Secret Service keyring to store API keys.
+See the [ArchWiki keyring setup guide](https://wiki.archlinux.org/title/GNOME/Keyring)
+for daemon and session setup, including systems without a desktop.
+
 ## Connections
 
 Add a server using its HTTP or HTTPS origin, such as `https://nas.local` or
