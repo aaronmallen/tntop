@@ -22,7 +22,11 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       .buffer_mut()
       .set_style(area, ui.theme.style().fg(ui.theme.color("inactive_fg")));
   }
-  super::menu::draw(frame, ui);
+  if ui.menu == Some(super::menu::Menu::Options) {
+    super::options::draw(frame, ui, settings);
+  } else {
+    super::menu::draw(frame, ui);
+  }
 }
 
 fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
@@ -294,6 +298,7 @@ mod tests {
       interface: 0,
       message: None,
       menu: None,
+      options: Default::default(),
       picker: false,
       pool: 0,
       selected: 0,

@@ -42,6 +42,24 @@ pub struct Settings {
 }
 
 impl Settings {
+  pub fn preferences(&self) -> Result<serde_json::Value, Error> {
+    serde_json::to_value(self).map_err(|error| Error::Invalid(error.to_string()))
+  }
+
+  pub fn with_preference(&self, key: &str, value: serde_json::Value) -> Result<Self, Error> {
+    let mut values = self.preferences()?;
+    if key == "servers" || values.get(key).is_none() {
+      return Err(Error::Invalid(format!("unknown preference: {key}")));
+    }
+    values[key] = value;
+    let candidate: Self = serde_json::from_value(values).map_err(|error| Error::Invalid(error.to_string()))?;
+    let candidate: Self = Compote::from(Serialized::defaults(candidate))
+      .merge(Env::prefixed("TNTOP_").split("__").ignore(env::COMPOTE_IGNORE))
+      .extract()?;
+    candidate.validate()?;
+    Ok(candidate)
+  }
+
   pub fn servers_mut(&mut self) -> &mut Vec<Server> {
     &mut self.servers
   }

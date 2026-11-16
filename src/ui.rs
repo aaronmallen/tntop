@@ -2,6 +2,7 @@ mod banner;
 mod input;
 mod manager;
 mod menu;
+mod options;
 mod theme;
 mod update;
 mod view;
@@ -58,6 +59,7 @@ struct Ui {
   interface: usize,
   message: Option<String>,
   menu: Option<menu::Menu>,
+  options: options::Options,
   picker: bool,
   pool: usize,
   selected: usize,
@@ -90,6 +92,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     interface: 0,
     message: None,
     menu: None,
+    options: Default::default(),
     picker: selected.is_none(),
     pool: 0,
     selected: selected.unwrap_or(0),
@@ -205,6 +208,9 @@ async fn run_terminal(
           _ => {}
         }
         ui.app_row = 0;
+        continue;
+      }
+      if ui.menu == Some(menu::Menu::Options) && options::handle(ui, settings, config_path, key.code) {
         continue;
       }
       if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {

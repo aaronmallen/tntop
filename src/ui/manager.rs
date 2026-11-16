@@ -280,6 +280,7 @@ mod tests {
       interface: 0,
       message: None,
       menu: None,
+      options: Default::default(),
       picker: true,
       pool: 0,
       selected: 0,
