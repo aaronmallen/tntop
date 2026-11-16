@@ -61,6 +61,20 @@ HTTPS uses encrypted WebSockets and the configured CA certificate or trusted
 certificate fingerprint. HTTP uses plain WebSockets and skips certificate checks
 and trust prompts. HTTP sends your API key and server data without encryption.
 
+## Themes
+
+All 49 bundled btop themes work offline, with no theme files to install.
+Set `theme = "dracula"` in your config to use a bundled name, or use `"Default"`
+for tntop's black background. The bundled notices and source are in [themes](themes/README.md).
+
+Put custom `.theme` files in a `themes/` folder beside your selected config file.
+A user file takes precedence over a bundled theme with the same name. `Default`
+always means the built-in palette. Invalid user files report an error rather than
+silently loading a different theme. Names are case-sensitive.
+
+Explicit paths still work: `theme = "themes/personal.theme"` resolves relative to
+the selected config file, and absolute paths remain absolute.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

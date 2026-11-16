@@ -14,3 +14,12 @@ file contents against that archive, then run the theme parser tests and package
 checks. Review added and removed themes before committing.
 
 Ordinary builds use these local files and do not download themes.
+
+Release binaries embed every theme. Set `theme = "dracula"` in the config file,
+or use another filename without `.theme`. `Default` selects tntop's built-in
+colors. No theme-folder installation is needed.
+
+User themes live in `themes/` beside the selected config file. A user theme with
+the same name overrides the bundled copy; `Default` stays reserved. Names are
+case-sensitive and appear once in the sorted catalog. Explicit paths still work,
+including paths relative to the config file, such as `theme = "themes/mine.theme"`.

@@ -2,6 +2,64 @@ use std::{collections::HashMap, path::Path};
 
 use ratatui::style::{Color, Style};
 
+macro_rules! bundled {
+  ($($name:literal),* $(,)?) => {
+    &[$(($name, include_str!(concat!("../../themes/", $name, ".theme")))),*]
+  };
+}
+
+const BUNDLED: &[(&str, &str)] = bundled![
+  "HotPurpleTrafficLight",
+  "adapta",
+  "adwaita",
+  "adwaita-dark",
+  "ayu",
+  "dracula",
+  "dusklight",
+  "elementarish",
+  "everforest-dark-hard",
+  "everforest-dark-medium",
+  "everforest-light-medium",
+  "flat-remix",
+  "flat-remix-light",
+  "flexoki-dark",
+  "flexoki-light",
+  "gotham",
+  "greyscale",
+  "gruvbox_dark",
+  "gruvbox_dark_v2",
+  "gruvbox_light",
+  "gruvbox_material_dark",
+  "horizon",
+  "kanagawa-dragon",
+  "kanagawa-lotus",
+  "kanagawa-wave",
+  "kyli0x",
+  "matcha-dark-sea",
+  "monokai",
+  "night-owl",
+  "nord",
+  "onedark",
+  "orange",
+  "paper",
+  "phoenix-night",
+  "solarized_dark",
+  "solarized_light",
+  "tokyo-night",
+  "tokyo-storm",
+  "tomorrow-night",
+  "twilight",
+  "whiteout",
+  "zacess-cream",
+  "zacess-dark",
+  "zacess-deep-contrast-dark",
+  "zacess-deep-contrast-light",
+  "zacess-high-contrast-dark",
+  "zacess-high-contrast-light",
+  "zacess-light",
+  "zacess-yellow-on-black",
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
   #[error("invalid btop theme at line {0}")]
@@ -13,11 +71,51 @@ pub enum Error {
 pub struct Theme(HashMap<String, Color>);
 
 impl Theme {
-  pub fn load(path: Option<&Path>) -> Result<Self, Error> {
-    match path {
-      Some(path) => Self::parse(&std::fs::read_to_string(path)?),
-      None => Ok(Self::default()),
+  pub fn load(path: Option<&Path>, config: &Path) -> Result<Self, Error> {
+    let Some(path) = path else {
+      return Ok(Self::default());
+    };
+    let directory = config.parent().unwrap_or(Path::new("."));
+    if path == Path::new("Default") {
+      return Ok(Self::default());
     }
+    if path.components().count() == 1
+      && path.extension().is_none()
+      && let Some(name) = path.to_str()
+    {
+      match std::fs::read_to_string(directory.join("themes").join(format!("{name}.theme"))) {
+        Ok(source) => return Self::parse(&source),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+      }
+      if let Some((_, source)) = BUNDLED.iter().find(|(bundled, _)| *bundled == name) {
+        return Self::parse(source);
+      }
+    }
+    Self::parse(&std::fs::read_to_string(directory.join(path))?)
+  }
+
+  pub fn names(config: &Path) -> Result<Vec<String>, Error> {
+    let mut names: std::collections::BTreeSet<_> = BUNDLED.iter().map(|(name, _)| (*name).to_owned()).collect();
+    let directory = config.parent().unwrap_or(Path::new(".")).join("themes");
+    match std::fs::read_dir(directory) {
+      Ok(entries) => {
+        for entry in entries {
+          let entry = entry?;
+          let path = entry.path();
+          if path.extension().is_some_and(|extension| extension == "theme")
+            && entry.file_type()?.is_file()
+            && let Some(name) = path.file_stem().and_then(|name| name.to_str())
+          {
+            names.insert(name.to_owned());
+          }
+        }
+      }
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+      Err(error) => return Err(error.into()),
+    }
+    names.remove("Default");
+    Ok(std::iter::once("Default".into()).chain(names).collect())
   }
 
   fn parse(source: &str) -> Result<Self, Error> {
@@ -203,6 +301,10 @@ mod tests {
           }
         }
         assert_eq!(count, 49);
+        assert_eq!(BUNDLED.len(), count);
+        for (_, source) in BUNDLED {
+          Theme::parse(source).unwrap();
+        }
       }
 
       #[test]
@@ -232,6 +334,60 @@ mod tests {
           assert!(Theme::parse(&format!("theme[main_fg]={value}")).is_err());
         }
       }
+    }
+
+    #[test]
+    fn it_discovers_user_themes_and_uses_them_before_bundled_names() {
+      let directory = tempfile::tempdir().unwrap();
+      let config = directory.path().join("config.toml");
+      assert_eq!(Theme::names(&config).unwrap().len(), 50);
+      for (name, _) in BUNDLED {
+        Theme::load(Some(Path::new(name)), &config).unwrap();
+      }
+      std::fs::create_dir(directory.path().join("themes")).unwrap();
+      std::fs::write(
+        directory.path().join("themes/dracula.theme"),
+        "theme[main_bg]=\"#010203\"",
+      )
+      .unwrap();
+      std::fs::write(
+        directory.path().join("themes/personal.theme"),
+        "theme[main_bg]=\"#040506\"",
+      )
+      .unwrap();
+      std::fs::write(directory.path().join("themes/Default.theme"), "invalid").unwrap();
+      let names = Theme::names(&config).unwrap();
+      assert_eq!(names.len(), 51);
+      assert_eq!(names.iter().filter(|name| *name == "dracula").count(), 1);
+      assert_eq!(
+        Theme::load(Some(Path::new("dracula")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(1, 2, 3)
+      );
+      assert_eq!(
+        Theme::load(Some(Path::new("Default")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(0, 0, 0)
+      );
+      assert_eq!(
+        Theme::load(Some(Path::new("themes/personal.theme")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(4, 5, 6)
+      );
+      assert!(Theme::load(Some(Path::new("missing.theme")), &config).is_err());
+      assert_eq!(
+        Theme::load(Some(&directory.path().join("themes/personal.theme")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(4, 5, 6)
+      );
+      std::fs::remove_dir_all(directory.path().join("themes")).unwrap();
+      std::fs::write(directory.path().join("themes"), "not a directory").unwrap();
+      assert!(Theme::names(&config).is_err());
+      assert!(Theme::load(Some(Path::new("dracula")), &config).is_err());
     }
   }
 }

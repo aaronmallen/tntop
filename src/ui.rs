@@ -120,14 +120,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
 }
 
 fn load_theme(settings: &Settings, config_path: &Path) -> Result<Theme, Error> {
-  let theme_path = settings.theme().as_ref().map(|path| {
-    if path.is_absolute() {
-      path.clone()
-    } else {
-      config_path.parent().unwrap_or(Path::new(".")).join(path)
-    }
-  });
-  Ok(Theme::load(theme_path.as_deref())?)
+  Ok(Theme::load(settings.theme().as_deref(), config_path)?)
 }
 
 fn apply_preferences(
