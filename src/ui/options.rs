@@ -179,6 +179,19 @@ fn rows(category: usize) -> Vec<OptionRow> {
         _ => None,
       };
       rows.extend(position);
+      if category == 1 {
+        rows.extend([
+          OptionRow { key: "cpu_graph_upper", label: "Upper graph source", description: "Cycle Auto, total, busiest core and available cores. Auto uses total. A saved core absent on this server shows N/A." },
+          OptionRow { key: "cpu_graph_lower", label: "Lower graph source", description: "Cycle Auto, total, busiest core and available cores. Auto uses busiest core. Missing cores stay unavailable rather than falling back." },
+          OptionRow { key: "cpu_invert_lower", label: "Invert lower graph", description: "Draw the lower graph down from its top edge." },
+          OptionRow { key: "cpu_single_graph", label: "Single graph", description: "Use the whole graph area for the upper source and hide the lower graph." },
+          OptionRow { key: "check_temp", label: "Show temperatures", description: "Show existing CPU temperature readings. This does not enable new sensors or collection." },
+          OptionRow { key: "show_coretemp", label: "Show core temperatures", description: "Show per-core temperatures when Show temperatures is on. Missing readings show N/A." },
+          OptionRow { key: "temp_scale", label: "Temperature units", description: "Cycle Celsius, Fahrenheit, Kelvin and Rankine. The existing readings arrive in Celsius." },
+          OptionRow { key: "custom_cpu_name", label: "Custom CPU name", description: "Replace the model label. Empty uses the model reported by TrueNAS." },
+          OptionRow { key: "show_uptime", label: "Show uptime", description: "Show the existing TrueNAS uptime reading below the CPU graphs." },
+        ]);
+      }
       rows
     }
     _ => Vec::new(),
@@ -329,11 +342,29 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 }
                 Err(error) => ui.options.error = Some(error.to_string()),
               }
-            } else if row.key.starts_with("graph_symbol") || matches!(row.key, "disable_presets" | "log_level") {
+            } else if matches!(row.key, "cpu_graph_upper" | "cpu_graph_lower") {
+              let mut choices = vec!["auto".to_owned(), "total".into(), "busiest".into()];
+              if let Some(Some(session)) = ui.sessions.get(ui.selected)
+                && let Some(metrics) = session.receiver.borrow().history().back()
+              {
+                choices.extend(metrics.cpu().keys().filter(|name| name.as_str() != "cpu").cloned());
+              }
+              let index = choices.iter().position(|choice| values[row.key] == choice.as_str());
+              let next = index.map_or(0, |index| (index + 1) % choices.len());
+              let result = settings
+                .with_preference(row.key, Value::String(choices[next].clone()))
+                .map_err(super::Error::from)
+                .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
+              ui.options.error = result.err().map(|error| error.to_string());
+            } else if row.key.starts_with("graph_symbol")
+              || matches!(row.key, "disable_presets" | "log_level" | "temp_scale")
+            {
               let choices = if row.key == "disable_presets" {
                 &["off", "default", "custom", "all"][..]
               } else if row.key == "log_level" {
                 &["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"][..]
+              } else if row.key == "temp_scale" {
+                &["celsius", "fahrenheit", "kelvin", "rankine"][..]
               } else if row.key == "graph_symbol" {
                 &["braille", "block", "tty"][..]
               } else {
@@ -521,6 +552,55 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  async fn it_cycles_available_cpu_sources_and_saves_cpu_preferences() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    let mut settings = Settings::default();
+    let before = settings.clone();
+    let mut ui = Ui::default();
+    let (_, receiver) = tokio::sync::watch::channel(crate::client::fixtures::state());
+    ui.sessions.push(Some(super::super::Session {
+      interval: tokio::sync::watch::channel(2000).0,
+      receiver,
+      task: tokio::spawn(std::future::pending()),
+    }));
+    ui.options.category = 1;
+    ui.options.row = rows(1).iter().position(|row| row.key == "cpu_graph_upper").unwrap();
+    for expected in ["total", "busiest", "cpu0", "cpu1", "cpu2", "cpu3", "auto", "total"] {
+      handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+      assert_eq!(settings.cpu_graph_upper(), expected);
+    }
+    for key in [
+      "cpu_invert_lower",
+      "cpu_single_graph",
+      "check_temp",
+      "show_coretemp",
+      "show_uptime",
+    ] {
+      ui.options.row = rows(1).iter().position(|row| row.key == key).unwrap();
+      handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    }
+    crate::config::save_preferences(&path, &before, &settings).unwrap();
+    let loaded = crate::config::load(&path).unwrap();
+    assert_eq!(loaded.cpu_graph_upper(), "total");
+    assert!(loaded.cpu_single_graph());
+    assert!(!loaded.cpu_invert_lower());
+    assert!(!loaded.check_temp());
+    assert!(!loaded.show_coretemp());
+    assert!(!loaded.show_uptime());
+    assert!(
+      settings
+        .with_preference("cpu_graph_upper", Value::String("gpu".into()))
+        .is_err()
+    );
+    assert!(
+      settings
+        .with_preference("temp_scale", Value::String("unknown".into()))
+        .is_err()
+    );
+  }
 
   #[test]
   fn it_edits_general_preferences_and_preserves_vim_letters_in_the_clock() {

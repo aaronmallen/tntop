@@ -159,6 +159,19 @@ Collection continues, and resizing redraws the background once.
 TUI, logs append to `tntop.log` beside the config file. They do not print
 over the display. Exit and error paths restore the prior logging state.
 
+## CPU display
+
+CPU Options selects each graph from total usage, the busiest core, or a
+core available on the current server. **Auto** means total for the upper
+graph and busiest core for the lower. A saved core missing on another
+server shows **N/A**. Single-graph mode shows only the upper source.
+The lower graph can point up or down.
+
+Show or hide CPU/core temperatures and uptime, choose Celsius, Fahrenheit,
+Kelvin or Rankine, and set a custom CPU name. An empty name uses the model
+from TrueNAS. Missing temperatures stay **N/A**. These settings use the
+readings already collected.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

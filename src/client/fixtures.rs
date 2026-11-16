@@ -54,3 +54,10 @@ pub(crate) fn without_app_stats() -> State {
   state.app_stats_error = Some("app.stats requires APPS_READ".into());
   state
 }
+
+pub(crate) fn with_metrics(metrics: Metrics) -> State {
+  let mut state = state();
+  state.history.clear();
+  state.record_metrics(metrics, Instant::now(), None);
+  state
+}

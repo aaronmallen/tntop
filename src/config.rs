@@ -35,6 +35,24 @@ pub enum Error {
 #[derive(Clone, CopyGetters, Debug, Deserialize, Getters, Serialize)]
 #[serde(default)]
 pub struct Settings {
+  #[get = "pub"]
+  cpu_graph_upper: String,
+  #[get = "pub"]
+  cpu_graph_lower: String,
+  #[get_copy = "pub"]
+  cpu_invert_lower: bool,
+  #[get_copy = "pub"]
+  cpu_single_graph: bool,
+  #[get_copy = "pub"]
+  check_temp: bool,
+  #[get_copy = "pub"]
+  show_coretemp: bool,
+  #[get = "pub"]
+  temp_scale: String,
+  #[get = "pub"]
+  custom_cpu_name: String,
+  #[get_copy = "pub"]
+  show_uptime: bool,
   #[get_copy = "pub"]
   background_update: bool,
   #[get_copy = "pub"]
@@ -122,6 +140,25 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    for source in [&self.cpu_graph_upper, &self.cpu_graph_lower] {
+      if !matches!(source.as_str(), "auto" | "total" | "busiest")
+        && !source
+          .strip_prefix("cpu")
+          .is_some_and(|index| !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()))
+      {
+        return Err(Error::Invalid(
+          "CPU graph source must be auto, total, busiest or cpu followed by a core number".into(),
+        ));
+      }
+    }
+    if !matches!(
+      self.temp_scale.as_str(),
+      "celsius" | "fahrenheit" | "kelvin" | "rankine"
+    ) {
+      return Err(Error::Invalid(
+        "temp_scale must be celsius, fahrenheit, kelvin or rankine".into(),
+      ));
+    }
     let epoch = chrono::DateTime::<chrono::Utc>::from(std::time::UNIX_EPOCH);
     std::fmt::write(&mut String::new(), format_args!("{}", epoch.format(&self.clock_format)))
       .map_err(|_| Error::Invalid("clock_format contains an unsupported strftime sequence".into()))?;
@@ -146,6 +183,15 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      cpu_graph_upper: "auto".into(),
+      cpu_graph_lower: "auto".into(),
+      cpu_invert_lower: true,
+      cpu_single_graph: false,
+      check_temp: true,
+      show_coretemp: true,
+      temp_scale: "celsius".into(),
+      custom_cpu_name: String::new(),
+      show_uptime: true,
       background_update: true,
       log_level: log::LevelFilter::Warn,
       servers: Vec::new(),
