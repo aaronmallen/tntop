@@ -6,7 +6,7 @@ mod network;
 use ratatui::{
   Frame,
   layout::{Alignment, Constraint, Layout, Rect},
-  style::{Modifier, Style},
+  style::{Color, Modifier, Style},
   text::{Line, Span},
   widgets::{Block, BorderType, Paragraph, Row, Table, TableState, Wrap},
 };
@@ -49,7 +49,9 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     Paragraph::new(Line::from(vec![
       Span::styled(
         " tntop ",
-        Style::default().fg(theme.color("hi_fg")).add_modifier(Modifier::BOLD),
+        Style::default()
+          .fg(Color::Rgb(145, 24, 254))
+          .add_modifier(Modifier::BOLD),
       ),
       Span::raw(format!(
         " {}  {}  {}ms",
