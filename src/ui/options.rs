@@ -92,6 +92,11 @@ fn rows(category: usize) -> Vec<OptionRow> {
         label: "Graph symbol",
         description: "Enter cycles braille, block and tty. Braille and block show two samples per column; tty shows one. Panel overrides can inherit this choice.",
       },
+      OptionRow {
+        key: "presets",
+        label: "Presets",
+        description: "Up to nine layouts, separated by spaces. Each layout lists panel:position:graph entries separated by commas. Panels: cpu, mem, net, apps (or proc). Position: 0/1. Graph: default, braille, block, tty.",
+      },
     ],
     1..=4 => {
       let mut rows = vec![

@@ -101,6 +101,24 @@ panels, Apps can sit on either side, and Memory/ZFS can sit above or below Netwo
 Storage stays inside Memory/ZFS. Hidden panels keep their sessions and history;
 the menu remains available when every panel is hidden.
 
+## Preset definitions
+
+The `presets` setting holds up to nine space-separated layouts. Each layout
+contains comma-separated `panel:position:graph` entries. Panels are `cpu`, `mem`,
+`net` and `apps`; `proc` aliases `apps`. Positions are `0` or `1`; `1` puts CPU
+at the bottom, Memory below Network, or Apps on the left. Network follows Memory's
+position, as in btop. Graphs accept `default`, `braille`, `block` or `tty`.
+
+Preset 0 always shows all four panels in their default positions. The three
+configured defaults are:
+
+```toml
+presets = "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:default cpu:0:block,net:0:tty"
+```
+
+Edit definitions in General Options or the config file. Invalid definitions
+leave the live settings intact. An empty string leaves only preset 0.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

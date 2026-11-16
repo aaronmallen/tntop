@@ -1,5 +1,6 @@
 mod env;
 mod graph;
+mod preset;
 mod server;
 
 use std::{
@@ -61,6 +62,7 @@ pub struct Settings {
   apps_left: bool,
   #[get_copy = "pub"]
   mem_below_net: bool,
+  presets: String,
   #[get_copy = "pub"]
   graph_symbol: GraphSymbol,
   #[get_copy = "pub"]
@@ -99,6 +101,7 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    self.presets()?;
     if self.graph_symbol == GraphSymbol::Default {
       return Err(Error::Invalid("graph_symbol must be braille, block or tty".into()));
     }
@@ -133,6 +136,7 @@ impl Default for Settings {
       cpu_bottom: false,
       apps_left: false,
       mem_below_net: false,
+      presets: "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:default cpu:0:block,net:0:tty".into(),
       graph_symbol: GraphSymbol::Braille,
       graph_symbol_cpu: GraphSymbol::Default,
       graph_symbol_mem: GraphSymbol::Default,
