@@ -19,6 +19,8 @@ fn lines() -> Vec<&'static str> {
     "  s                 Server manager",
     "  q / Ctrl-C        Quit; Ctrl-C works inside editors too",
     "  Ctrl-R            Reload display preferences",
+    "  + / -             Increase / decrease redraw interval by 100 ms",
+    "                    Collection stays at least 2000 ms",
     "  Main > Update     Check and install the latest stable release",
     "",
     "Options",

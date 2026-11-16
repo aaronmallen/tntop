@@ -17,7 +17,15 @@ use crate::config::{GraphSymbol, Settings};
 
 pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   ui.hits.clear();
-  draw_content(frame, ui, settings);
+  if !settings.background_update()
+    && ui.menu.is_some()
+    && ui.background.as_ref().is_some_and(|buffer| buffer.area == frame.area())
+  {
+    *frame.buffer_mut() = ui.background.as_ref().unwrap().clone();
+  } else {
+    draw_content(frame, ui, settings);
+    ui.background = (!settings.background_update()).then(|| frame.buffer_mut().clone());
+  }
   if ui.menu.is_some() {
     let area = frame.area();
     frame
@@ -144,6 +152,18 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
         &[("", &hotkey.to_string(), label, KeyCode::Char(hotkey))],
       );
     }
+  }
+  if cpu.width > 12 && cpu.height > 1 {
+    super::mouse::controls(
+      frame,
+      &mut ui.hits,
+      Rect::new(cpu.x + 10, cpu.y, cpu.width - 11, 1),
+      &ui.theme,
+      &[
+        ("", "-", "", KeyCode::Char('-')),
+        ("", "+", &format!(" {}ms", settings.update_ms()), KeyCode::Char('+')),
+      ],
+    );
   }
   if [cpu, memory, network, apps].into_iter().all(Rect::is_empty) {
     frame.render_widget(
@@ -457,6 +477,7 @@ mod tests {
 
   fn ui() -> Ui {
     Ui {
+      background: None,
       app_row: 0,
       dialog: None,
       discovery: None,
@@ -524,11 +545,58 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn it_freezes_only_menu_backgrounds_and_resumes_with_current_data() {
+      let mut settings = settings()
+        .with_preference("background_update", serde_json::json!(false))
+        .unwrap()
+        .with_preference("clock_format", serde_json::json!("BEFORE"))
+        .unwrap();
+      let mut ui = ui();
+      let (sender, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      let mut terminal = Terminal::new(TestBackend::new(160, 60)).unwrap();
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      ui.menu = Some(crate::ui::menu::Menu::Main(0));
+      settings = settings
+        .with_preference("clock_format", serde_json::json!("AFTER"))
+        .unwrap();
+      sender.send_replace(crate::client::State::default());
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      assert!(text(&terminal).contains("BEFORE"));
+      assert!(!text(&terminal).contains("AFTER"));
+      assert!(ui.sessions[0].as_ref().unwrap().receiver.borrow().history().is_empty());
+      ui.menu = None;
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      assert!(text(&terminal).contains("AFTER"));
+      ui.menu = Some(crate::ui::menu::Menu::Main(0));
+      settings = settings
+        .with_preference("background_update", serde_json::json!(true))
+        .unwrap()
+        .with_preference("clock_format", serde_json::json!("LIVE"))
+        .unwrap();
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      assert!(text(&terminal).contains("LIVE"));
+    }
+
+    #[tokio::test]
     async fn it_toggles_all_panels_and_resizes_without_replacing_the_session() {
       let mut settings = settings();
       let mut ui = ui();
       let (_, receiver) = watch::channel(fixtures::state());
       ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
         receiver,
         task: tokio::spawn(std::future::pending()),
       });
@@ -576,6 +644,7 @@ mod tests {
       let mut ui = ui();
       let (_, receiver) = watch::channel(fixtures::state());
       ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
         receiver,
         task: tokio::spawn(std::future::pending()),
       });
@@ -632,6 +701,7 @@ mod tests {
         let mut ui = ui();
         let (_sender, receiver) = watch::channel(state.clone());
         ui.sessions[0] = Some(Session {
+          interval: watch::channel(2000).0,
           receiver,
           task: tokio::spawn(std::future::pending()),
         });

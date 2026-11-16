@@ -131,6 +131,16 @@ fn rows(category: usize) -> Vec<OptionRow> {
         label: "Clock format",
         description: "UTC strftime format, or empty to hide. /host is the configured server URL host. /user is N/A (API identity unavailable). /uptime uses TrueNAS system uptime.",
       },
+      OptionRow {
+        key: "background_update",
+        label: "Background update",
+        description: "Update the dashboard behind menus. When off, keep its last frame while collection continues. Resizing redraws it once.",
+      },
+      OptionRow {
+        key: "log_level",
+        label: "Log level",
+        description: "Cycle OFF, ERROR, WARN, INFO, DEBUG and TRACE. During the TUI, diagnostics append to tntop.log beside the config file.",
+      },
     ],
     1..=4 => {
       let mut rows = vec![
@@ -319,9 +329,11 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 }
                 Err(error) => ui.options.error = Some(error.to_string()),
               }
-            } else if row.key.starts_with("graph_symbol") || row.key == "disable_presets" {
+            } else if row.key.starts_with("graph_symbol") || matches!(row.key, "disable_presets" | "log_level") {
               let choices = if row.key == "disable_presets" {
                 &["off", "default", "custom", "all"][..]
+              } else if row.key == "log_level" {
+                &["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"][..]
               } else if row.key == "graph_symbol" {
                 &["braille", "block", "tty"][..]
               } else {
@@ -518,7 +530,13 @@ mod tests {
     let before = settings.clone();
     let mut ui = Ui::default();
     ui.menu = Some(super::super::menu::Menu::Options);
-    for key in ["rounded_corners", "tty_sync", "vim_keys", "base_10_sizes"] {
+    for key in [
+      "rounded_corners",
+      "tty_sync",
+      "vim_keys",
+      "base_10_sizes",
+      "background_update",
+    ] {
       ui.options.row = rows(0).iter().position(|row| row.key == key).unwrap();
       handle(&mut ui, &mut settings, &path, KeyCode::Enter);
     }
@@ -534,12 +552,17 @@ mod tests {
     }
     handle(&mut ui, &mut settings, &path, KeyCode::Enter);
     assert_eq!(settings.clock_format(), "hjkl");
+    ui.options.row = rows(0).iter().position(|row| row.key == "log_level").unwrap();
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert_eq!(settings.log_level(), log::LevelFilter::Info);
     crate::config::save_preferences(&path, &before, &settings).unwrap();
     let loaded = crate::config::load(&path).unwrap();
     assert!(!loaded.rounded_corners());
     assert!(!loaded.tty_sync());
     assert!(loaded.vim_keys());
     assert!(loaded.base_10_sizes());
+    assert!(!loaded.background_update());
+    assert_eq!(loaded.log_level(), log::LevelFilter::Info);
     assert_eq!(loaded.clock_format(), "hjkl");
   }
 
@@ -599,6 +622,7 @@ mod tests {
     let task = tokio::spawn(std::future::pending());
     let id = task.id();
     ui.sessions.push(Some(super::super::Session {
+      interval: tokio::sync::watch::channel(2000).0,
       receiver,
       task,
     }));

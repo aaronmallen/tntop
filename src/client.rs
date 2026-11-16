@@ -217,28 +217,47 @@ pub fn watch(
   server: Server,
   key: Zeroizing<String>,
   update_ms: u64,
-) -> (watch::Receiver<State>, tokio::task::JoinHandle<()>) {
+) -> (watch::Receiver<State>, watch::Sender<u64>, tokio::task::JoinHandle<()>) {
   let (sender, receiver) = watch::channel(State::default());
+  let (interval, mut updates) = watch::channel(update_ms.max(2000));
   let task = tokio::spawn(async move {
     let mut state = State::default();
     let mut delay = 2;
     loop {
-      let result = monitor(&server, &key, update_ms, &sender, &mut state).await;
+      let update_ms = *updates.borrow_and_update();
+      log::debug!("starting collection at {update_ms} ms (API minimum 2000 ms)");
+      let result = tokio::select! {
+        result = monitor(&server, &key, update_ms, &sender, &mut state) => result,
+        changed = updates.changed() => {
+          if changed.is_err() { break; }
+          delay = 2;
+          continue;
+        }
+      };
       if sender.is_closed() {
         break;
       }
       if let Err(error) = result {
+        log::warn!("collection stopped: {error}");
         state.error = Some(error.to_string());
         sender.send_replace(state.clone());
         if matches!(error, Error::Authentication) {
           break;
         }
       }
-      tokio::time::sleep(Duration::from_secs(delay)).await;
+      tokio::select! {
+        _ = sender.closed() => break,
+        _ = tokio::time::sleep(Duration::from_secs(delay)) => {},
+        changed = updates.changed() => {
+          if changed.is_err() { break; }
+          delay = 2;
+          continue;
+        }
+      }
       delay = (delay * 2).min(30);
     }
   });
-  (receiver, task)
+  (receiver, interval, task)
 }
 
 async fn monitor(
@@ -347,7 +366,11 @@ mod tests {
 
   use super::*;
 
-  async fn server(authenticated: bool, details_allowed: bool) -> (Server, tokio::task::JoinHandle<()>) {
+  async fn server(
+    authenticated: bool,
+    details_allowed: bool,
+    intervals: Vec<u64>,
+  ) -> (Server, tokio::task::JoinHandle<()>) {
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let pin: String = ring::digest::digest(&ring::digest::SHA256, certificate.cert.der())
       .as_ref()
@@ -365,63 +388,70 @@ mod tests {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let task = tokio::spawn(async move {
-      let (stream, _) = listener.accept().await.unwrap();
-      let stream = acceptor.accept(stream).await.unwrap();
-      let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-      while let Some(Ok(message)) = socket.next().await {
-        if !message.is_text() {
-          continue;
-        }
-        let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
-        let method = request["method"].as_str().unwrap();
-        let result = match method {
-          "auth.login_with_api_key" => {
-            pretty_assertions::assert_eq!(request["params"], json!(["test-api-key"]));
-            json!(authenticated)
+      for interval in intervals {
+        let (stream, _) = listener.accept().await.unwrap();
+        let stream = acceptor.accept(stream).await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+        while let Some(Ok(message)) = socket.next().await {
+          if !message.is_text() {
+            continue;
           }
-          "system.version" => json!("TrueNAS-25.10.8"),
-          "core.subscribe" => json!(true),
-          "system.info" => json!({"model":"Test CPU","loadavg":[1.0,2.0,3.0],"uptime_seconds":120}),
-          "app.query" => {
-            json!([{"name":"postgres","state":"RUNNING","image_updates_available":false,"upgrade_available":true}])
-          }
-          _ => panic!("unexpected method {method}"),
-        };
-        let denied = !details_allowed
-          && (method == "system.info"
-            || method == "app.query"
-            || (method == "core.subscribe" && request["params"][0].as_str().unwrap().starts_with("app.stats")));
-        let reply = if denied {
-          json!({"jsonrpc":"2.0","id":request["id"],"error":{"code":-32603,"message":"private server details"}})
-        } else {
-          json!({"jsonrpc":"2.0","id":request["id"],"result":result})
-        };
-        socket.send(Message::Text(reply.to_string().into())).await.unwrap();
-        if method == "core.subscribe" && !denied {
-          let collection = request["params"][0].as_str().unwrap();
-          assert!(
-            collection.ends_with("{\"interval\":2}"),
-            "sub-second refresh must respect API minimum"
-          );
-          let fields = if collection.starts_with("reporting.realtime") {
-            json!({
-              "cpu":{"cpu":{"usage":25,"temp":50}},
-              "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":200},
-              "interfaces":{"eth0":{"link_state":"LINK_STATE_UP","received_bytes_rate":100,"sent_bytes_rate":50}}
-            })
-          } else {
-            json!([{"app_name":"postgres","cpu_usage":2.5,"memory":100,
-              "networks":[],"blkio":{"read":10,"write":20}}])
+          let request: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+          let method = request["method"].as_str().unwrap();
+          let result = match method {
+            "auth.login_with_api_key" => {
+              pretty_assertions::assert_eq!(request["params"], json!(["test-api-key"]));
+              json!(authenticated)
+            }
+            "system.version" => json!("TrueNAS-25.10.8"),
+            "core.subscribe" => json!(true),
+            "system.info" => json!({"model":"Test CPU","loadavg":[1.0,2.0,3.0],"uptime_seconds":120}),
+            "app.query" => {
+              json!([{"name":"postgres","state":"RUNNING","image_updates_available":false,"upgrade_available":true}])
+            }
+            _ => panic!("unexpected method {method}"),
           };
-          socket
-            .send(Message::Text(
-              json!({"method":"collection_update",
+          let denied = !details_allowed
+            && (method == "system.info"
+              || method == "app.query"
+              || (method == "core.subscribe" && request["params"][0].as_str().unwrap().starts_with("app.stats")));
+          let reply = if denied {
+            json!({"jsonrpc":"2.0","id":request["id"],"error":{"code":-32603,"message":"private server details"}})
+          } else {
+            json!({"jsonrpc":"2.0","id":request["id"],"result":result})
+          };
+          if socket.send(Message::Text(reply.to_string().into())).await.is_err() {
+            break;
+          }
+          if method == "core.subscribe" && !denied {
+            let collection = request["params"][0].as_str().unwrap();
+            assert!(
+              collection.ends_with(&format!("{{\"interval\":{interval}}}")),
+              "collection must use the current interval with the API minimum"
+            );
+            let fields = if collection.starts_with("reporting.realtime") {
+              json!({
+                "cpu":{"cpu":{"usage":25,"temp":50}},
+                "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":200},
+                "interfaces":{"eth0":{"link_state":"LINK_STATE_UP","received_bytes_rate":100,"sent_bytes_rate":50}}
+              })
+            } else {
+              json!([{"app_name":"postgres","cpu_usage":2.5,"memory":100,
+              "networks":[],"blkio":{"read":10,"write":20}}])
+            };
+            if socket
+              .send(Message::Text(
+                json!({"method":"collection_update",
             "params":{"collection":collection,"fields":fields}})
-              .to_string()
-              .into(),
-            ))
-            .await
-            .unwrap();
+                .to_string()
+                .into(),
+              ))
+              .await
+              .is_err()
+            {
+              break;
+            }
+          }
         }
       }
     });
@@ -599,9 +629,31 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn it_changes_live_intervals_without_losing_history_or_leaving_a_collector() {
+      let (server, peer) = server(true, true, vec![2, 4]).await;
+      let (mut receiver, interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
+      timeout(Duration::from_secs(5), async {
+        while receiver.borrow().history().is_empty() {
+          receiver.changed().await.unwrap();
+        }
+        let first = receiver.borrow().history()[0].clone();
+        interval.send_replace(3500);
+        while receiver.borrow().history().len() < 2 {
+          receiver.changed().await.unwrap();
+        }
+        assert!(Arc::ptr_eq(&first, &receiver.borrow().history()[0]));
+      })
+      .await
+      .unwrap();
+      drop(receiver);
+      timeout(Duration::from_secs(5), task).await.unwrap().unwrap();
+      timeout(Duration::from_secs(5), peer).await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
     async fn it_keeps_metrics_when_optional_api_permissions_are_denied() {
-      let (server, peer) = server(true, false).await;
-      let (mut receiver, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
+      let (server, peer) = server(true, false, vec![2]).await;
+      let (mut receiver, _interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
       let state = timeout(Duration::from_secs(5), async {
         loop {
           receiver.changed().await.unwrap();
@@ -629,8 +681,8 @@ mod tests {
 
     #[tokio::test]
     async fn it_publishes_live_metrics_apps_and_system_details_and_stops_when_closed() {
-      let (server, peer) = server(true, true).await;
-      let (mut receiver, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
+      let (server, peer) = server(true, true, vec![2]).await;
+      let (mut receiver, _interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
       let state = timeout(Duration::from_secs(5), async {
         loop {
           receiver.changed().await.unwrap();
@@ -659,8 +711,8 @@ mod tests {
 
     #[tokio::test]
     async fn it_stops_retrying_a_rejected_api_key() {
-      let (server, peer) = server(false, true).await;
-      let (mut receiver, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
+      let (server, peer) = server(false, true, vec![2]).await;
+      let (mut receiver, _interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 100);
       timeout(Duration::from_secs(5), receiver.changed())
         .await
         .unwrap()

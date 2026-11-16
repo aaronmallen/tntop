@@ -249,8 +249,9 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
       discover(ui, settings);
       return Ok(());
     }
-    let (receiver, task) = client::watch(server.clone(), key, settings.update_ms());
+    let (receiver, interval, task) = client::watch(server.clone(), key, settings.update_ms());
     ui.sessions[ui.selected] = Some(Session {
+      interval,
       receiver,
       task,
     });
@@ -272,6 +273,7 @@ mod tests {
 
   fn ui() -> Ui {
     Ui {
+      background: None,
       app_row: 0,
       dialog: None,
       discovery: None,

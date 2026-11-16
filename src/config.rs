@@ -35,6 +35,10 @@ pub enum Error {
 #[derive(Clone, CopyGetters, Debug, Deserialize, Getters, Serialize)]
 #[serde(default)]
 pub struct Settings {
+  #[get_copy = "pub"]
+  background_update: bool,
+  #[get_copy = "pub"]
+  log_level: log::LevelFilter,
   #[get = "pub"]
   servers: Vec<Server>,
   #[get_copy = "pub"]
@@ -142,6 +146,8 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      background_update: true,
+      log_level: log::LevelFilter::Warn,
       servers: Vec::new(),
       save_on_exit: true,
       disable_mouse: false,

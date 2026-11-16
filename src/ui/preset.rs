@@ -52,6 +52,7 @@ mod tests {
     let task = tokio::spawn(std::future::pending());
     let id = task.id();
     ui.sessions.push(Some(super::super::Session {
+      interval: tokio::sync::watch::channel(2000).0,
       receiver,
       task,
     }));

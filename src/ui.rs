@@ -45,6 +45,7 @@ pub enum Error {
 }
 
 struct Session {
+  interval: watch::Sender<u64>,
   receiver: watch::Receiver<client::State>,
   task: tokio::task::JoinHandle<()>,
 }
@@ -57,6 +58,7 @@ impl Drop for Session {
 
 #[derive(Default)]
 struct Ui {
+  background: Option<ratatui::buffer::Buffer>,
   app_row: usize,
   dialog: Option<manager::Dialog>,
   discovery: Option<tokio::task::JoinHandle<Result<String, client::Error>>>,
@@ -104,6 +106,7 @@ pub async fn run(
     return Err(Error::NoTerminal);
   }
   let mut ui = Ui {
+    background: None,
     app_row: 0,
     dialog: None,
     discovery: None,
@@ -123,13 +126,15 @@ pub async fn run(
     theme: load_theme(&settings, config_path)?,
     update: Default::default(),
   };
-  let level = log::max_level();
-  log::set_max_level(log::LevelFilter::Off);
+  if let Some(parent) = config_path.parent() {
+    std::fs::create_dir_all(parent)?;
+  }
+  let logging = crate::logger::Logger::redirect(&config_path.with_file_name("tntop.log"), settings.log_level())?;
   let mut baseline = settings.clone();
   let result = run_terminal(&mut ui, &mut settings, config_path, &mut baseline).await;
   let _ = ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture);
   ratatui::restore();
-  log::set_max_level(level);
+  drop(logging);
   result?;
   if settings.save_on_exit() {
     crate::config::save_preferences(config_path, &baseline, &settings)?;
@@ -159,7 +164,18 @@ fn apply_preferences(
     .preset
     .filter(|index| presets.get(*index).is_some_and(|preset| preset.same_layout(&candidate)));
   *candidate.servers_mut() = settings.servers().clone();
+  for session in ui.sessions.iter().flatten() {
+    session.interval.send_if_modified(|interval| {
+      let next = candidate.update_ms().max(2000);
+      if *interval == next {
+        return false;
+      }
+      *interval = next;
+      true
+    });
+  }
   *settings = candidate;
+  crate::logger::Logger::set_level(settings.log_level());
   ui.theme = theme;
   Ok(())
 }
@@ -284,6 +300,21 @@ async fn run_terminal(
         continue;
       }
       match key.code {
+        KeyCode::Char('+' | '-') => {
+          let value = if key.code == KeyCode::Char('+') {
+            settings.update_ms().saturating_add(100).min(86400000)
+          } else {
+            settings.update_ms().saturating_sub(100).max(100)
+          };
+          let result = settings
+            .with_preference("update_ms", serde_json::json!(value))
+            .map_err(Error::from)
+            .and_then(|candidate| apply_preferences(ui, settings, config_path, candidate));
+          ui.message = Some(match result {
+            Ok(()) => format!("Redraw {} ms; collection minimum 2000 ms.", settings.update_ms()),
+            Err(error) => error.to_string(),
+          });
+        }
         KeyCode::Char('q') => return Ok(()),
         KeyCode::Down if ui.picker => ui.selected = (ui.selected + 1) % settings.servers().len().max(1),
         KeyCode::Up if ui.picker => {
@@ -421,6 +452,7 @@ mod tests {
     let id = task.id();
     let mut ui = Ui::default();
     ui.sessions.push(Some(Session {
+      interval: watch::channel(2000).0,
       receiver,
       task,
     }));
@@ -431,10 +463,27 @@ mod tests {
     assert!(!settings.save_on_exit());
     assert_eq!(settings.servers().len(), 1);
     assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+    let mut interval = ui.sessions[0].as_ref().unwrap().interval.subscribe();
+    for (milliseconds, changed) in [(100, false), (2000, false), (3500, true), (86400000, true)] {
+      let candidate = settings
+        .with_preference("update_ms", serde_json::json!(milliseconds))
+        .unwrap();
+      apply_preferences(&mut ui, &mut settings, &path, candidate).unwrap();
+      assert_eq!(interval.has_changed().unwrap(), changed);
+      assert_eq!(*interval.borrow_and_update(), milliseconds.max(2000));
+      assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+    }
+    for invalid in [99, 86400001] {
+      assert!(
+        settings
+          .with_preference("update_ms", serde_json::json!(invalid))
+          .is_err()
+      );
+    }
     std::fs::write(&path, "theme = 'missing.theme'\nupdate_ms = 1000\n").unwrap();
     let candidate = crate::config::load(&path).unwrap();
     assert!(apply_preferences(&mut ui, &mut settings, &path, candidate).is_err());
-    assert_eq!(settings.update_ms(), 500);
+    assert_eq!(settings.update_ms(), 86400000);
     assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
   }
 

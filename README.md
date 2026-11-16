@@ -144,6 +144,21 @@ An empty format hides the clock. `/host` uses the configured server URL
 host, `/user` shows `N/A` because API identity is unavailable, and `/uptime`
 uses the existing TrueNAS uptime reading.
 
+## Refresh and logging
+
+Set **Redraw interval (ms)** in Options or press **+/-** on the dashboard to
+change redraw timing by 100 ms, within 100..86400000 ms. Collection has a
+2000 ms floor; TrueNAS stream intervals round up to whole seconds. Changes
+above that floor reconnect the existing collector with its history intact.
+Faster painting does not produce more server data.
+
+Turn **Background update** off to freeze the dashboard behind menus.
+Collection continues, and resizing redraws the background once.
+
+**Log level** accepts OFF, ERROR, WARN, INFO, DEBUG and TRACE. During the
+TUI, logs append to `tntop.log` beside the config file. They do not print
+over the display. Exit and error paths restore the prior logging state.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
