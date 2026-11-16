@@ -93,7 +93,10 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   frame.render_widget(
     Paragraph::new(vec![
       Line::from(" q quit  s/Esc servers  ↑↓ apps  / filter  o sort  n interface  p pool"),
-      Line::styled(status, Style::default().fg(ui.theme.color("graph_text"))),
+      Line::styled(
+        ui.message.clone().unwrap_or(status),
+        Style::default().fg(ui.theme.color("graph_text")),
+      ),
     ]),
     footer,
   );

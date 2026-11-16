@@ -44,6 +44,7 @@ impl Drop for Session {
   }
 }
 
+#[derive(Default)]
 struct Ui {
   app_row: usize,
   dialog: Option<manager::Dialog>,
@@ -74,13 +75,6 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
   if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
     return Err(Error::NoTerminal);
   }
-  let theme_path = settings.theme().as_ref().map(|path| {
-    if path.is_absolute() {
-      path.clone()
-    } else {
-      config_path.parent().unwrap_or(Path::new(".")).join(path)
-    }
-  });
   let mut ui = Ui {
     app_row: 0,
     dialog: None,
@@ -94,17 +88,52 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     selected: selected.unwrap_or(0),
     sessions: (0..settings.servers().len()).map(|_| None).collect(),
     sort: 0,
-    theme: Theme::load(theme_path.as_deref())?,
+    theme: load_theme(&settings, config_path)?,
   };
   let level = log::max_level();
   log::set_max_level(log::LevelFilter::Off);
-  let result = run_terminal(&mut ui, &mut settings, config_path).await;
+  let mut baseline = settings.clone();
+  let result = run_terminal(&mut ui, &mut settings, config_path, &mut baseline).await;
   ratatui::restore();
   log::set_max_level(level);
-  result
+  result?;
+  if settings.save_on_exit() {
+    crate::config::save_preferences(config_path, &baseline, &settings)?;
+  }
+  Ok(())
 }
 
-async fn run_terminal(ui: &mut Ui, settings: &mut Settings, config_path: &Path) -> Result<(), Error> {
+fn load_theme(settings: &Settings, config_path: &Path) -> Result<Theme, Error> {
+  let theme_path = settings.theme().as_ref().map(|path| {
+    if path.is_absolute() {
+      path.clone()
+    } else {
+      config_path.parent().unwrap_or(Path::new(".")).join(path)
+    }
+  });
+  Ok(Theme::load(theme_path.as_deref())?)
+}
+
+fn apply_preferences(
+  ui: &mut Ui,
+  settings: &mut Settings,
+  config_path: &Path,
+  mut candidate: Settings,
+) -> Result<(), Error> {
+  candidate.validate()?;
+  let theme = load_theme(&candidate, config_path)?;
+  *candidate.servers_mut() = settings.servers().clone();
+  *settings = candidate;
+  ui.theme = theme;
+  Ok(())
+}
+
+async fn run_terminal(
+  ui: &mut Ui,
+  settings: &mut Settings,
+  config_path: &Path,
+  baseline: &mut Settings,
+) -> Result<(), Error> {
   let mut terminal = ratatui::try_init()?;
   if !ui.picker {
     terminal.draw(|frame| view::draw(frame, ui, settings))?;
@@ -165,6 +194,19 @@ async fn run_terminal(ui: &mut Ui, settings: &mut Settings, config_path: &Path) 
           _ => {}
         }
         ui.app_row = 0;
+        continue;
+      }
+      if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let result = crate::config::load(config_path)
+          .map_err(Error::from)
+          .and_then(|candidate| apply_preferences(ui, settings, config_path, candidate));
+        match result {
+          Ok(()) => {
+            *baseline = settings.clone();
+            ui.message = Some("Preferences reloaded.".into());
+          }
+          Err(error) => ui.message = Some(error.to_string()),
+        }
         continue;
       }
       match key.code {
@@ -233,6 +275,36 @@ fn select(settings: &Settings, name: Option<&str>) -> Result<Option<usize>, Erro
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  async fn it_reloads_preferences_without_replacing_sessions_and_rejects_bad_themes() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    let mut settings = Settings::default();
+    settings
+      .servers_mut()
+      .push(crate::config::Server::new("nas".into(), "http://nas.local".parse().unwrap()).unwrap());
+    let (_, receiver) = watch::channel(client::State::default());
+    let task = tokio::spawn(std::future::pending());
+    let id = task.id();
+    let mut ui = Ui::default();
+    ui.sessions.push(Some(Session {
+      receiver,
+      task,
+    }));
+    std::fs::write(&path, "update_ms = 500\nsave_on_exit = false\n").unwrap();
+    let candidate = crate::config::load(&path).unwrap();
+    apply_preferences(&mut ui, &mut settings, &path, candidate).unwrap();
+    assert_eq!(settings.update_ms(), 500);
+    assert!(!settings.save_on_exit());
+    assert_eq!(settings.servers().len(), 1);
+    assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+    std::fs::write(&path, "theme = 'missing.theme'\nupdate_ms = 1000\n").unwrap();
+    let candidate = crate::config::load(&path).unwrap();
+    assert!(apply_preferences(&mut ui, &mut settings, &path, candidate).is_err());
+    assert_eq!(settings.update_ms(), 500);
+    assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+  }
 
   mod select {
     use pretty_assertions::assert_eq;

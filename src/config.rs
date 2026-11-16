@@ -33,6 +33,8 @@ pub enum Error {
 pub struct Settings {
   #[get = "pub"]
   servers: Vec<Server>,
+  #[get_copy = "pub"]
+  save_on_exit: bool,
   #[get = "pub"]
   theme: Option<PathBuf>,
   #[get_copy = "pub"]
@@ -63,10 +65,56 @@ impl Default for Settings {
   fn default() -> Self {
     Self {
       servers: Vec::new(),
+      save_on_exit: true,
       theme: None,
       update_ms: 2000,
     }
   }
+}
+
+pub fn save_preferences(path: &Path, before: &Settings, after: &Settings) -> Result<(), Error> {
+  after.validate()?;
+  let before = serde_json::to_value(before).map_err(|error| Error::Invalid(error.to_string()))?;
+  let after = serde_json::to_value(after).map_err(|error| Error::Invalid(error.to_string()))?;
+  let source = match std::fs::read_to_string(path) {
+    Ok(source) => source,
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+    Err(error) => return Err(error.into()),
+  };
+  let mut document = source.parse::<toml_edit::DocumentMut>()?;
+  let mut changed = false;
+  for (key, value) in after.as_object().unwrap() {
+    if key == "servers"
+      || before.get(key) == Some(value)
+      || std::env::var_os(format!("TNTOP_{}", key.to_uppercase())).is_some()
+    {
+      continue;
+    }
+    let replacement = match value {
+      serde_json::Value::Null => None,
+      serde_json::Value::Bool(value) => Some(toml_edit::Value::from(*value)),
+      serde_json::Value::String(value) => Some(toml_edit::Value::from(value.as_str())),
+      serde_json::Value::Number(value) => Some(toml_edit::Value::from(
+        value
+          .as_i64()
+          .ok_or_else(|| Error::Invalid(format!("invalid preference: {key}")))?,
+      )),
+      _ => return Err(Error::Invalid(format!("unsupported preference: {key}"))),
+    };
+    if let Some(mut value) = replacement {
+      if let Some(old) = document.get(key).and_then(toml_edit::Item::as_value) {
+        *value.decor_mut() = old.decor().clone();
+      }
+      document[key] = toml_edit::Item::Value(value);
+    } else {
+      document.remove(key);
+    }
+    changed = true;
+  }
+  if changed {
+    save(path, &document)?;
+  }
+  Ok(())
 }
 
 pub fn add_server(path: &Path, server: &Server) -> Result<(), Error> {
@@ -206,6 +254,74 @@ fn save(path: &Path, document: &toml_edit::DocumentMut) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  mod save_preferences {
+    use super::*;
+
+    #[test]
+    fn it_keeps_environment_overrides_out_of_the_file() {
+      if std::env::var_os("_TNTOP_PREFS_CHILD").is_none() {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+          .args([
+            "--exact",
+            "config::tests::save_preferences::it_keeps_environment_overrides_out_of_the_file",
+          ])
+          .env("_TNTOP_PREFS_CHILD", "1")
+          .env("TNTOP_UPDATE_MS", "700")
+          .status()
+          .unwrap();
+        assert!(status.success());
+        return;
+      }
+      let directory = tempfile::tempdir().unwrap();
+      let path = directory.path().join("config.toml");
+      std::fs::write(&path, "update_ms = 500\n").unwrap();
+      let before = load(&path).unwrap();
+      assert_eq!(before.update_ms(), 700);
+      let mut after = before.clone();
+      after.update_ms = 900;
+      super::super::save_preferences(&path, &before, &after).unwrap();
+      assert_eq!(std::fs::read_to_string(&path).unwrap(), "update_ms = 500\n");
+    }
+
+    #[test]
+    fn it_changes_only_preferences_and_keeps_comments_unknown_values_and_trust() {
+      let directory = tempfile::tempdir().unwrap();
+      let path = directory.path().join("config.toml");
+      let source = format!(
+        "# keep\nupdate_ms = 500 # cadence\nunknown = 'keep'\n[[servers]]\nname='nas'\nurl='https://nas.local'\ncertificate_sha256='{}'\n",
+        "ab".repeat(32)
+      );
+      std::fs::write(&path, &source).unwrap();
+      let before = load(&path).unwrap();
+      let mut after = before.clone();
+      after.update_ms = 1000;
+      after.servers.clear();
+      super::super::save_preferences(&path, &before, &after).unwrap();
+      let saved = std::fs::read_to_string(&path).unwrap();
+      assert!(saved.starts_with("# keep\nupdate_ms = 1000 # cadence\nunknown = 'keep'"));
+      assert_eq!(
+        load(&path).unwrap().servers()[0].certificate_sha256(),
+        &Some("ab".repeat(32))
+      );
+      assert_eq!(load(&path).unwrap().update_ms(), 1000);
+    }
+
+    #[test]
+    fn it_keeps_the_file_on_invalid_preferences_or_write_failure() {
+      let directory = tempfile::tempdir().unwrap();
+      let path = directory.path().join("config.toml");
+      std::fs::write(&path, "update_ms = 500\n").unwrap();
+      let before = load(&path).unwrap();
+      let mut after = before.clone();
+      after.update_ms = 0;
+      assert!(super::super::save_preferences(&path, &before, &after).is_err());
+      assert_eq!(std::fs::read_to_string(&path).unwrap(), "update_ms = 500\n");
+      after.update_ms = 1000;
+      assert!(super::super::save_preferences(&path.join("blocked"), &before, &after).is_err());
+      assert_eq!(std::fs::read_to_string(&path).unwrap(), "update_ms = 500\n");
+    }
+  }
 
   mod add_server {
     #[test]
