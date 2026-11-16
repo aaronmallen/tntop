@@ -1,3 +1,4 @@
+mod input;
 mod manager;
 mod theme;
 mod view;

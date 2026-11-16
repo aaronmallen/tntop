@@ -9,7 +9,7 @@ use ratatui::{
 };
 use zeroize::Zeroizing;
 
-use super::{Error, Session, Ui, view::panel};
+use super::{Error, Session, Ui, input::Input, view::panel};
 use crate::{
   client,
   config::{self, Server, Settings},
@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub(super) enum Dialog {
-  Add { field: usize, values: [String; 3] },
+  Add { field: usize, values: [Input; 3] },
   Delete,
   Key { value: Zeroizing<String> },
   Trust { fingerprint: String },
@@ -38,20 +38,15 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
   let server = settings.servers().get(ui.selected);
   let (title, mut lines) = match &ui.dialog {
     Some(Dialog::Add {
-      field,
-      values,
+      field, ..
     }) => (
       " add server ",
       vec![
         "Tab / ↑↓ switch fields. Enter saves. Esc cancels.".into(),
         String::new(),
-        format!("{} Name: {}", if *field == 0 { "›" } else { " " }, values[0]),
-        format!("{} HTTP(S) URL: {}", if *field == 1 { "›" } else { " " }, values[1]),
-        format!(
-          "{} CA PEM path (optional): {}",
-          if *field == 2 { "›" } else { " " },
-          values[2]
-        ),
+        format!("{} Name: ", if *field == 0 { "›" } else { " " }),
+        format!("{} HTTP(S) URL: ", if *field == 1 { "›" } else { " " }),
+        format!("{} CA PEM path (optional): ", if *field == 2 { "›" } else { " " },),
         String::new(),
         "For HTTPS, leave CA path empty to trust a certificate fingerprint.".into(),
       ],
@@ -127,6 +122,22 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       }),
     area,
   );
+  if let Some(Dialog::Add {
+    field,
+    values,
+  }) = &ui.dialog
+  {
+    for (index, (value, prefix)) in values.iter().zip([9, 16, 27]).enumerate() {
+      let y = area.y + 3 + index as u16;
+      if y < area.bottom().saturating_sub(1) {
+        value.draw(
+          frame,
+          Rect::new(area.x + prefix, y, area.width.saturating_sub(prefix + 1), 1),
+          index == *field,
+        );
+      }
+    }
+  }
 }
 
 pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, key: KeyCode) -> Result<(), Error> {
@@ -142,14 +153,11 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
     }) => match key {
       KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % values.len(),
       KeyCode::BackTab | KeyCode::Up => *field = (*field + values.len() - 1) % values.len(),
-      KeyCode::Backspace => {
-        values[*field].pop();
-      }
-      KeyCode::Char(c) if !c.is_control() => values[*field].push(c),
       KeyCode::Enter => {
         let mut server = Server::new(
-          values[0].trim().into(),
+          values[0].value.trim().into(),
           values[1]
+            .value
             .trim()
             .parse()
             .map_err(|_| config::Error::Invalid("enter an HTTP or HTTPS server URL".into()))?,
@@ -161,8 +169,8 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
         {
           return Err(config::Error::Invalid(format!("server already exists: {}", server.name())).into());
         }
-        if !values[2].trim().is_empty() {
-          server = server.with_ca_cert(std::fs::canonicalize(values[2].trim())?);
+        if !values[2].value.trim().is_empty() {
+          server = server.with_ca_cert(std::fs::canonicalize(values[2].value.trim())?);
         }
         config::add_server(path, &server)?;
         settings.servers_mut().push(server);
@@ -171,7 +179,7 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
         ui.dialog = None;
         open(ui, settings).await?;
       }
-      _ => {}
+      _ => values[*field].handle(key),
     },
     Some(Dialog::Delete) => match key {
       KeyCode::Char('y') => {
@@ -309,7 +317,7 @@ mod tests {
       for dialog in [
         Dialog::Add {
           field: 1,
-          values: ["home".into(), "https://nas.local".into(), String::new()],
+          values: ["home", "https://nas.local", ""].map(Input::new),
         },
         Dialog::Delete,
         Dialog::Key {
@@ -398,7 +406,7 @@ mod tests {
       let mut ui = ui();
       ui.dialog = Some(Dialog::Add {
         field: 0,
-        values: ["home".into(), "ftp://nas.local".into(), String::new()],
+        values: ["home", "ftp://nas.local", ""].map(Input::new),
       });
       assert!(
         super::super::handle(&mut ui, &mut settings, &path, KeyCode::Enter)
@@ -422,6 +430,42 @@ mod tests {
         .unwrap();
       assert!(ui.dialog.is_none());
       assert!(settings.servers().is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_keeps_each_fields_cursor_when_switching_fields() {
+      let mut settings = Settings::default();
+      let mut ui = ui();
+      ui.dialog = Some(Dialog::Add {
+        field: 0,
+        values: ["hoem", "http://nas.local", ""].map(Input::new),
+      });
+      for key in [
+        KeyCode::Left,
+        KeyCode::Backspace,
+        KeyCode::Tab,
+        KeyCode::Home,
+        KeyCode::Down,
+        KeyCode::Up,
+        KeyCode::Char('X'),
+        KeyCode::BackTab,
+        KeyCode::Right,
+        KeyCode::Char('e'),
+      ] {
+        super::super::handle(&mut ui, &mut settings, Path::new("unused.toml"), key)
+          .await
+          .unwrap();
+      }
+      let Some(Dialog::Add {
+        field,
+        values,
+      }) = &ui.dialog
+      else {
+        panic!("add dialog closed");
+      };
+      assert_eq!(*field, 0);
+      assert_eq!(values[0].value, "home");
+      assert_eq!(values[1].value, "Xhttp://nas.local");
     }
   }
 }
