@@ -125,6 +125,25 @@ a preset at startup. **Disable presets** in General accepts `off`, `default`
 (preset 0), `custom` (presets 1–9) or `all`. Cycling skips disabled choices;
 startup selection reports an error for a disabled or missing preset.
 
+## Appearance and input
+
+General Options controls rounded corners, synchronized terminal output,
+Vim keys, byte units and the clock. TTY mode uses ASCII borders and disables
+synchronized output. Turn synchronization off if your terminal does not
+support it.
+
+With Vim keys enabled, **h/j/k/l** act as Left/Down/Up/Right in lists and
+menus. **H** still opens Help. Text fields and the app filter keep literal
+letters.
+
+**Base-10 sizes** uses kB/MB/GB (1000 bytes per step); otherwise displays use
+KiB/MiB/GiB (1024). This applies to memory, storage, network and apps.
+
+**Clock format** accepts UTC strftime formats such as `%H:%M:%S UTC`.
+An empty format hides the clock. `/host` uses the configured server URL
+host, `/user` shows `N/A` because API identity is unavailable, and `/uptime`
+uses the existing TrueNAS uptime reading.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

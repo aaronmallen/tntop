@@ -14,6 +14,8 @@ fn lines() -> Vec<&'static str> {
     "  m / Esc           Main menu; Esc first closes the active layer",
     "  F2 / o            Options",
     "  F1 / ? / h / H    Help",
+    "  Vim keys          h/j/k/l move left/down/up/right when enabled",
+    "                    Use H for Help; text fields keep literal letters",
     "  s                 Server manager",
     "  q / Ctrl-C        Quit; Ctrl-C works inside editors too",
     "  Ctrl-R            Reload display preferences",

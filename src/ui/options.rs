@@ -33,6 +33,10 @@ struct OptionRow {
 }
 
 impl Options {
+  pub fn editing_text(&self) -> bool {
+    self.editing.is_some()
+  }
+
   pub fn select_row(&mut self, row: usize) -> bool {
     if self.editing.is_some() || self.theme_choice.is_some() {
       return false;
@@ -101,6 +105,31 @@ fn rows(category: usize) -> Vec<OptionRow> {
         key: "disable_presets",
         label: "Disable presets",
         description: "Enter cycles off, default, custom and all. Default disables preset 0; custom disables presets 1–9. Cycling skips disabled choices.",
+      },
+      OptionRow {
+        key: "rounded_corners",
+        label: "Rounded corners",
+        description: "Draw rounded panel corners. TTY output always uses ASCII borders.",
+      },
+      OptionRow {
+        key: "tty_sync",
+        label: "Synchronized output",
+        description: "Keep the previous frame visible until the next frame is complete. Disable if your terminal does not support synchronized updates. Off in TTY mode.",
+      },
+      OptionRow {
+        key: "vim_keys",
+        label: "Vim keys",
+        description: "Use h/j/k/l as Left/Down/Up/Right in lists and menus. H still opens Help. Text fields keep these letters as text.",
+      },
+      OptionRow {
+        key: "base_10_sizes",
+        label: "Base-10 sizes",
+        description: "Use decimal byte units (kB, MB, GB) instead of binary units (KiB, MiB, GiB). Applies to memory, storage, network and apps.",
+      },
+      OptionRow {
+        key: "clock_format",
+        label: "Clock format",
+        description: "UTC strftime format, or empty to hide. /host is the configured server URL host. /user is N/A (API identity unavailable). /uptime uses TrueNAS system uptime.",
       },
     ],
     1..=4 => {
@@ -480,6 +509,39 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn it_edits_general_preferences_and_preserves_vim_letters_in_the_clock() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    let mut settings = Settings::default();
+    let before = settings.clone();
+    let mut ui = Ui::default();
+    ui.menu = Some(super::super::menu::Menu::Options);
+    for key in ["rounded_corners", "tty_sync", "vim_keys", "base_10_sizes"] {
+      ui.options.row = rows(0).iter().position(|row| row.key == key).unwrap();
+      handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    }
+    ui.options.row = rows(0).iter().position(|row| row.key == "clock_format").unwrap();
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    handle(&mut ui, &mut settings, &path, KeyCode::Home);
+    for _ in 0..settings.clock_format().len() {
+      handle(&mut ui, &mut settings, &path, KeyCode::Delete);
+    }
+    for letter in "hjkl".chars() {
+      let key = super::super::navigation(&ui, &settings, KeyCode::Char(letter));
+      handle(&mut ui, &mut settings, &path, key);
+    }
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert_eq!(settings.clock_format(), "hjkl");
+    crate::config::save_preferences(&path, &before, &settings).unwrap();
+    let loaded = crate::config::load(&path).unwrap();
+    assert!(!loaded.rounded_corners());
+    assert!(!loaded.tty_sync());
+    assert!(loaded.vim_keys());
+    assert!(loaded.base_10_sizes());
+    assert_eq!(loaded.clock_format(), "hjkl");
+  }
 
   #[test]
   fn it_cycles_graph_choices_and_inherits_the_global_style() {

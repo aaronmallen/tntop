@@ -46,14 +46,28 @@ pub(super) fn indexed(color: Color, tty: bool) -> Color {
   Color::Indexed(index as u8)
 }
 
-pub(super) fn apply(frame: &mut Frame, truecolor: bool, tty: bool) {
-  if truecolor && !tty {
+pub(super) fn apply(frame: &mut Frame, settings: &crate::config::Settings, tty: bool) {
+  if settings.truecolor() && !tty && settings.rounded_corners() {
     return;
   }
   let mut colors = HashMap::new();
   for cell in &mut frame.buffer_mut().content {
-    cell.fg = *colors.entry(cell.fg).or_insert_with(|| indexed(cell.fg, tty));
-    cell.bg = *colors.entry(cell.bg).or_insert_with(|| indexed(cell.bg, tty));
+    if !settings.truecolor() || tty {
+      cell.fg = *colors.entry(cell.fg).or_insert_with(|| indexed(cell.fg, tty));
+      cell.bg = *colors.entry(cell.bg).or_insert_with(|| indexed(cell.bg, tty));
+    }
+    if !settings.rounded_corners() {
+      let corner = match cell.symbol() {
+        "╭" => Some("┌"),
+        "╮" => Some("┐"),
+        "╰" => Some("└"),
+        "╯" => Some("┘"),
+        _ => None,
+      };
+      if let Some(corner) = corner {
+        cell.set_symbol(corner);
+      }
+    }
     if tty && !cell.symbol().is_ascii() {
       let text: String = cell
         .symbol()
@@ -82,6 +96,38 @@ pub(super) fn apply(frame: &mut Frame, truecolor: bool, tty: bool) {
 
 #[cfg(test)]
 mod tests {
+  mod apply {
+    use pretty_assertions::assert_eq;
+
+    use super::super::*;
+
+    #[test]
+    fn it_changes_corners_without_losing_rgb_and_keeps_tty_ascii() {
+      let settings = crate::config::Settings::default()
+        .with_preference("rounded_corners", serde_json::json!(false))
+        .unwrap();
+      for tty in [false, true] {
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(4, 1)).unwrap();
+        terminal
+          .draw(|frame| {
+            frame.render_widget(
+              ratatui::widgets::Paragraph::new("╭╮╰╯")
+                .style(ratatui::style::Style::default().fg(Color::Rgb(12, 34, 56))),
+              frame.area(),
+            );
+            apply(frame, &settings, tty);
+          })
+          .unwrap();
+        let cells = &terminal.backend().buffer().content;
+        let symbols: String = cells.iter().map(|cell| cell.symbol()).collect();
+        assert_eq!(symbols, if tty { "++++" } else { "┌┐└┘" });
+        if !tty {
+          assert_eq!(cells[0].fg, Color::Rgb(12, 34, 56));
+        }
+      }
+    }
+  }
+
   use super::*;
 
   #[test]

@@ -1,4 +1,5 @@
 mod banner;
+mod clock;
 mod display;
 mod help;
 mod input;
@@ -171,7 +172,7 @@ async fn run_terminal(
 ) -> Result<(), Error> {
   let mut terminal = ratatui::try_init()?;
   if !ui.picker {
-    terminal.draw(|frame| view::draw(frame, ui, settings))?;
+    draw(&mut terminal, ui, settings)?;
     if let Err(error) = manager::open(ui, settings).await {
       ui.picker = true;
       ui.message = Some(error.to_string());
@@ -205,7 +206,7 @@ async fn run_terminal(
       redraw = Instant::now();
     }
     if redraw <= Instant::now() {
-      terminal.draw(|frame| view::draw(frame, ui, settings))?;
+      draw(&mut terminal, ui, settings)?;
       redraw = Instant::now() + Duration::from_millis(settings.update_ms());
     }
     if event::poll(Duration::ZERO)? {
@@ -250,6 +251,10 @@ async fn run_terminal(
         ui.app_row = 0;
         continue;
       }
+      let key = ratatui::crossterm::event::KeyEvent {
+        code: navigation(ui, settings, key.code),
+        ..key
+      };
       if ui.menu == Some(menu::Menu::Options) && options::handle(ui, settings, config_path, key.code) {
         continue;
       }
@@ -280,10 +285,8 @@ async fn run_terminal(
       }
       match key.code {
         KeyCode::Char('q') => return Ok(()),
-        KeyCode::Down | KeyCode::Char('j') if ui.picker => {
-          ui.selected = (ui.selected + 1) % settings.servers().len().max(1)
-        }
-        KeyCode::Up | KeyCode::Char('k') if ui.picker => {
+        KeyCode::Down if ui.picker => ui.selected = (ui.selected + 1) % settings.servers().len().max(1),
+        KeyCode::Up if ui.picker => {
           ui.selected = (ui.selected + settings.servers().len().max(1) - 1) % settings.servers().len().max(1)
         }
         KeyCode::Enter if ui.picker => {
@@ -310,8 +313,8 @@ async fn run_terminal(
           });
         }
         KeyCode::Char('t') if ui.picker && !settings.servers().is_empty() => manager::discover(ui, settings),
-        KeyCode::Down | KeyCode::Char('j') => ui.app_row = ui.app_row.saturating_add(1),
-        KeyCode::Up | KeyCode::Char('k') => ui.app_row = ui.app_row.saturating_sub(1),
+        KeyCode::Down => ui.app_row = ui.app_row.saturating_add(1),
+        KeyCode::Up => ui.app_row = ui.app_row.saturating_sub(1),
         KeyCode::Char('/') if !ui.picker => ui.filtering = true,
         KeyCode::Left | KeyCode::Right if !ui.picker => {
           ui.sort = (ui.sort + if key.code == KeyCode::Right { 1 } else { 3 }) % 4;
@@ -324,6 +327,35 @@ async fn run_terminal(
       }
     }
     tokio::time::sleep(Duration::from_millis(16)).await;
+  }
+}
+
+fn draw(terminal: &mut ratatui::DefaultTerminal, ui: &mut Ui, settings: &Settings) -> Result<(), Error> {
+  use ratatui::crossterm::SynchronizedUpdate;
+  let synchronize = settings.tty_sync() && !ui.theme.is_tty();
+  let mut draw = || terminal.draw(|frame| view::draw(frame, ui, settings)).map(|_| ());
+  if synchronize {
+    std::io::stdout().sync_update(|_| draw())??;
+  } else {
+    draw()?;
+  }
+  Ok(())
+}
+
+fn navigation(ui: &Ui, settings: &Settings, key: KeyCode) -> KeyCode {
+  if !settings.vim_keys()
+    || ui.dialog.is_some()
+    || ui.filtering
+    || (ui.menu == Some(menu::Menu::Options) && ui.options.editing_text())
+  {
+    return key;
+  }
+  match key {
+    KeyCode::Char('h') => KeyCode::Left,
+    KeyCode::Char('j') => KeyCode::Down,
+    KeyCode::Char('k') => KeyCode::Up,
+    KeyCode::Char('l') => KeyCode::Right,
+    _ => key,
   }
 }
 
@@ -343,6 +375,38 @@ fn select(settings: &Settings, name: Option<&str>) -> Result<Option<usize>, Erro
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  mod navigation {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn it_keeps_help_reachable_and_preserves_text_input() {
+      let mut ui = Ui::default();
+      let settings = Settings::default();
+      assert_eq!(navigation(&ui, &settings, KeyCode::Char('h')), KeyCode::Char('h'));
+      let settings = settings.with_preference("vim_keys", serde_json::json!(true)).unwrap();
+      for (letter, key) in [
+        ('h', KeyCode::Left),
+        ('j', KeyCode::Down),
+        ('k', KeyCode::Up),
+        ('l', KeyCode::Right),
+      ] {
+        assert_eq!(navigation(&ui, &settings, KeyCode::Char(letter)), key);
+      }
+      let help = navigation(&ui, &settings, KeyCode::Char('H'));
+      menu::handle(&mut ui, help);
+      assert_eq!(ui.menu, Some(menu::Menu::Help(0)));
+      ui.filtering = true;
+      assert_eq!(navigation(&ui, &settings, KeyCode::Char('j')), KeyCode::Char('j'));
+      ui.filtering = false;
+      ui.dialog = Some(manager::Dialog::Key {
+        value: Default::default(),
+      });
+      assert_eq!(navigation(&ui, &settings, KeyCode::Char('k')), KeyCode::Char('k'));
+    }
+  }
 
   #[tokio::test]
   async fn it_reloads_preferences_without_replacing_sessions_and_rejects_bad_themes() {

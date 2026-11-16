@@ -3,8 +3,10 @@ use ratatui::widgets::Cell;
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, symbol: GraphSymbol) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, settings: &Settings) {
   let theme = &ui.theme;
+  let symbol = graph_symbol(settings, theme, settings.graph_symbol_apps());
+  let bytes = |value| super::bytes(value, settings.base_10_sizes());
   let sort = ["cpu", "memory", "name", "state"][ui.sort];
   let title = format!(" apps / {sort} {}{} ", ui.filter, if ui.filtering { "▏" } else { "" });
   let block = panel(&title, "proc_box", theme);

@@ -12,6 +12,7 @@ version = "0.1.0"
 [dependencies]
 anstream = "0.6"
 anstyle = "1"
+chrono = { default-features = false, features = ["std"], version = "0.4" }
 clap = { features = ["derive"], version = "4" }
 compote = { features = ["env", "toml"], version = "0.3" }
 dir_spec = "0.5"

@@ -1,7 +1,8 @@
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, symbol: GraphSymbol) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, settings: &Settings) {
+  let symbol = graph_symbol(settings, theme, settings.graph_symbol_cpu());
   let block = panel(" cpu ", "cpu_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);

@@ -67,6 +67,16 @@ pub struct Settings {
   #[get_copy = "pub"]
   disable_presets: DisabledPresets,
   #[get_copy = "pub"]
+  rounded_corners: bool,
+  #[get_copy = "pub"]
+  tty_sync: bool,
+  #[get_copy = "pub"]
+  vim_keys: bool,
+  #[get_copy = "pub"]
+  base_10_sizes: bool,
+  #[get = "pub"]
+  clock_format: String,
+  #[get_copy = "pub"]
   graph_symbol: GraphSymbol,
   #[get_copy = "pub"]
   graph_symbol_cpu: GraphSymbol,
@@ -108,6 +118,9 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    let epoch = chrono::DateTime::<chrono::Utc>::from(std::time::UNIX_EPOCH);
+    std::fmt::write(&mut String::new(), format_args!("{}", epoch.format(&self.clock_format)))
+      .map_err(|_| Error::Invalid("clock_format contains an unsupported strftime sequence".into()))?;
     self.presets()?;
     if self.graph_symbol == GraphSymbol::Default {
       return Err(Error::Invalid("graph_symbol must be braille, block or tty".into()));
@@ -145,6 +158,11 @@ impl Default for Settings {
       mem_below_net: false,
       presets: "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:default cpu:0:block,net:0:tty".into(),
       disable_presets: DisabledPresets::Off,
+      rounded_corners: true,
+      tty_sync: true,
+      vim_keys: false,
+      base_10_sizes: false,
+      clock_format: "%H:%M:%S UTC".into(),
       graph_symbol: GraphSymbol::Braille,
       graph_symbol_cpu: GraphSymbol::Default,
       graph_symbol_mem: GraphSymbol::Default,

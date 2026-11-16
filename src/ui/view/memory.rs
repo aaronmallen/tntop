@@ -7,8 +7,10 @@ pub(super) fn draw(
   state: &State,
   pool_index: usize,
   theme: &Theme,
-  symbol: GraphSymbol,
+  settings: &Settings,
 ) {
+  let symbol = graph_symbol(settings, theme, settings.graph_symbol_mem());
+  let bytes = |value| super::bytes(value, settings.base_10_sizes());
   let [memory, storage] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
   let block = panel(" mem / zfs ", "mem_box", theme);
   let inner = block.inner(memory);
@@ -76,10 +78,12 @@ pub(super) fn draw(
     Paragraph::new(hit).style(Style::default().fg(theme.color("graph_text"))),
     foot,
   );
-  disks(frame, storage, state, pool_index, theme, symbol);
+  disks(frame, storage, state, pool_index, theme, settings);
 }
 
-fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, symbol: GraphSymbol) {
+fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, settings: &Settings) {
+  let symbol = graph_symbol(settings, theme, settings.graph_symbol_mem());
+  let bytes = |value| super::bytes(value, settings.base_10_sizes());
   let block = panel(" disks / pools ", "mem_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);

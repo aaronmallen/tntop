@@ -5,6 +5,7 @@ mod network;
 
 use ratatui::{
   Frame,
+  crossterm::event::KeyCode,
   layout::{Alignment, Constraint, Layout, Rect},
   style::{Color, Modifier, Style},
   text::{Line, Span},
@@ -31,7 +32,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   } else {
     super::menu::draw(frame, ui);
   }
-  super::display::apply(frame, settings.truecolor(), ui.theme.is_tty());
+  super::display::apply(frame, settings, ui.theme.is_tty());
 }
 
 fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
@@ -58,24 +59,44 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .map(|session| session.receiver.borrow().clone())
     .unwrap_or_default();
   let [header, body, footer] =
-    Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(2)]).areas(frame.area());
-  let [heading, presets, clock] =
-    Layout::horizontal([Constraint::Min(1), Constraint::Length(26), Constraint::Length(13)]).areas(header);
+    Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+  let clock_text = super::clock::format(
+    settings.clock_format(),
+    &settings.servers()[ui.selected],
+    &state,
+    std::time::SystemTime::now(),
+  );
+  let clock_width = Line::from(clock_text.as_str()).width().min((header.width / 3) as usize) as u16;
+  let [heading, navigation, presets, clock] = Layout::horizontal([
+    Constraint::Min(1),
+    Constraint::Length(15),
+    Constraint::Length(22),
+    Constraint::Length(clock_width),
+  ])
+  .areas(header);
   let label = ui
     .preset
-    .map_or_else(|| "manual".into(), |index| format!("preset {index}"));
-  let hints = super::mouse::hints(
+    .map_or_else(|| " manual".into(), |index| format!("reset {index}"));
+  super::mouse::controls(
+    frame,
     &mut ui.hits,
-    presets,
+    navigation,
+    theme,
     &[
-      ("P ‹", ratatui::crossterm::event::KeyCode::Char('P')),
-      (&label, ratatui::crossterm::event::KeyCode::Char('p')),
-      ("› p", ratatui::crossterm::event::KeyCode::Char('p')),
+      ("", "m", "enu", KeyCode::Char('m')),
+      ("", "s", "ervers", KeyCode::Char('s')),
     ],
   );
-  frame.render_widget(
-    Paragraph::new(hints).style(theme.style().fg(theme.color("hi_fg"))),
+  super::mouse::controls(
+    frame,
+    &mut ui.hits,
     presets,
+    theme,
+    &[
+      ("", "P", " ‹", KeyCode::Char('P')),
+      ("", "p", &label, KeyCode::Char('p')),
+      ("› ", "p", "", KeyCode::Char('p')),
+    ],
   );
   frame.render_widget(
     Paragraph::new(Line::from(vec![
@@ -94,54 +115,35 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     ])),
     heading,
   );
-  let seconds = std::time::SystemTime::now()
-    .duration_since(std::time::UNIX_EPOCH)
-    .unwrap_or_default()
-    .as_secs();
-  frame.render_widget(
-    Paragraph::new(format!(
-      "{:02}:{:02}:{:02} UTC",
-      seconds / 3600 % 24,
-      seconds / 60 % 60,
-      seconds % 60
-    ))
-    .alignment(Alignment::Right),
-    clock,
-  );
-  let tty = theme.is_tty();
-  let symbol = |symbol: GraphSymbol| {
-    if tty {
-      GraphSymbol::Tty
-    } else {
-      symbol.resolve(settings.graph_symbol())
-    }
-  };
+  frame.render_widget(Paragraph::new(clock_text).alignment(Alignment::Right), clock);
   let [cpu, memory, network, apps] = super::layout::areas(body, settings);
   if !cpu.is_empty() {
-    cpu::draw(frame, cpu, &state, theme, symbol(settings.graph_symbol_cpu()));
+    cpu::draw(frame, cpu, &state, theme, settings);
   }
   if !memory.is_empty() {
-    memory::draw(
-      frame,
-      memory,
-      &state,
-      ui.pool,
-      theme,
-      symbol(settings.graph_symbol_mem()),
-    );
+    memory::draw(frame, memory, &state, ui.pool, theme, settings);
   }
   if !network.is_empty() {
-    network::draw(
-      frame,
-      network,
-      &state,
-      ui.interface,
-      theme,
-      symbol(settings.graph_symbol_net()),
-    );
+    network::draw(frame, network, &state, ui.interface, theme, settings);
   }
   if !apps.is_empty() {
-    apps::draw(frame, apps, &state, ui, symbol(settings.graph_symbol_apps()));
+    apps::draw(frame, apps, &state, ui, settings);
+  }
+  for (area, hotkey, label) in [
+    (cpu, '1', " cpu"),
+    (memory, '2', " mem / zfs"),
+    (network, '3', " net"),
+    (apps, '4', " apps"),
+  ] {
+    if area.width > 2 && area.height > 1 {
+      super::mouse::controls(
+        frame,
+        &mut ui.hits,
+        Rect::new(area.x + 1, area.y, area.width - 2, 1),
+        &ui.theme,
+        &[("", &hotkey.to_string(), label, KeyCode::Char(hotkey))],
+      );
+    }
   }
   if [cpu, memory, network, apps].into_iter().all(Rect::is_empty) {
     frame.render_widget(
@@ -161,32 +163,11 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       settings.update_ms().div_ceil(1000).max(2)
     ),
   };
-  let hints = super::mouse::hints(
-    &mut ui.hits,
-    footer,
-    &[
-      ("m menu", ratatui::crossterm::event::KeyCode::Char('m')),
-      ("s servers", ratatui::crossterm::event::KeyCode::Char('s')),
-      ("1 cpu", ratatui::crossterm::event::KeyCode::Char('1')),
-      ("2 mem", ratatui::crossterm::event::KeyCode::Char('2')),
-      ("3 net", ratatui::crossterm::event::KeyCode::Char('3')),
-      ("4 apps", ratatui::crossterm::event::KeyCode::Char('4')),
-      ("/ filter", ratatui::crossterm::event::KeyCode::Char('/')),
-      ("← sort", ratatui::crossterm::event::KeyCode::Left),
-      ("sort →", ratatui::crossterm::event::KeyCode::Right),
-      ("n net", ratatui::crossterm::event::KeyCode::Char('n')),
-      ("[ pool", ratatui::crossterm::event::KeyCode::Char('[')),
-      ("pool ]", ratatui::crossterm::event::KeyCode::Char(']')),
-    ],
-  );
   frame.render_widget(
-    Paragraph::new(vec![
-      hints,
-      Line::styled(
-        ui.message.clone().unwrap_or(status),
-        Style::default().fg(ui.theme.color("graph_text")),
-      ),
-    ]),
+    Paragraph::new(Line::styled(
+      ui.message.clone().unwrap_or(status),
+      Style::default().fg(ui.theme.color("graph_text")),
+    )),
     footer,
   );
 }
@@ -207,14 +188,28 @@ fn age(instant: Option<std::time::Instant>) -> String {
     .unwrap_or_else(|| "waiting".into())
 }
 
-fn bytes(mut value: f64) -> String {
-  for unit in ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] {
-    if value < 1024.0 || unit == "PiB" {
+fn bytes(mut value: f64, base_10: bool) -> String {
+  let units = if base_10 {
+    ["B", "kB", "MB", "GB", "TB", "PB"]
+  } else {
+    ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
+  };
+  let base = if base_10 { 1000.0 } else { 1024.0 };
+  for (index, unit) in units.into_iter().enumerate() {
+    if value < base || index == units.len() - 1 {
       return format!("{value:.1} {unit}");
     }
-    value /= 1024.0;
+    value /= base;
   }
   unreachable!()
+}
+
+fn graph_symbol(settings: &Settings, theme: &Theme, symbol: GraphSymbol) -> GraphSymbol {
+  if theme.is_tty() {
+    GraphSymbol::Tty
+  } else {
+    symbol.resolve(settings.graph_symbol())
+  }
 }
 
 struct Graph<'a> {
@@ -424,6 +419,21 @@ fn sparkline(values: impl IntoIterator<Item = f64>, width: u16, symbol: GraphSym
 
 #[cfg(test)]
 mod tests {
+  mod bytes {
+    use pretty_assertions::assert_eq;
+
+    use super::super::*;
+
+    #[test]
+    fn it_uses_the_selected_base_at_unit_boundaries() {
+      assert_eq!(bytes(1000.0, true), "1.0 kB");
+      assert_eq!(bytes(1000.0, false), "1000.0 B");
+      assert_eq!(bytes(1024.0, false), "1.0 KiB");
+      assert_eq!(bytes(1_000_000.0, true), "1.0 MB");
+      assert_eq!(bytes(1_048_576.0, false), "1.0 MiB");
+    }
+  }
+
   use ratatui::{Terminal, backend::TestBackend};
   use tokio::sync::watch;
 
@@ -481,7 +491,7 @@ mod tests {
         let state = fixtures::state();
         ui.filter = "forge".into();
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, &Settings::default()))
           .unwrap();
         let output = text(&terminal);
         assert!(output.contains("forgejo"));
@@ -491,7 +501,7 @@ mod tests {
         ui.sort = 2;
         ui.app_row = 1;
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, &Settings::default()))
           .unwrap();
         assert!(text(&terminal).contains("jellyfin  10.11"));
       }
@@ -502,7 +512,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(120, 25)).unwrap();
         let mut ui = ui();
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, GraphSymbol::Braille))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, &Settings::default()))
           .unwrap();
         assert!(text(&terminal).contains("N/A"));
         assert!(text(&terminal).contains("APPS_READ"));

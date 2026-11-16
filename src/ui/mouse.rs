@@ -5,6 +5,42 @@ use ratatui::{
 
 use super::{Ui, menu::Menu};
 
+pub(super) fn controls(
+  frame: &mut ratatui::Frame,
+  hits: &mut Vec<(Rect, Action)>,
+  area: Rect,
+  theme: &super::theme::Theme,
+  labels: &[(&str, &str, &str, KeyCode)],
+) {
+  use ratatui::{
+    style::Modifier,
+    text::{Line, Span},
+  };
+  if area.is_empty() {
+    return;
+  }
+  let mut x = area.x;
+  for (before, hotkey, after, key) in labels {
+    let line = Line::from(vec![
+      Span::raw(format!(" {before}")),
+      Span::styled(
+        *hotkey,
+        theme.style().fg(theme.color("hi_fg")).add_modifier(Modifier::BOLD),
+      ),
+      Span::raw(format!("{after} ")),
+    ])
+    .style(theme.style().fg(theme.color("title")));
+    let width = line.width() as u16;
+    if width > area.right().saturating_sub(x) {
+      break;
+    }
+    let target = Rect::new(x, area.y, width, 1);
+    frame.render_widget(line, target);
+    hits.push((target, Action::Key(*key)));
+    x += width;
+  }
+}
+
 pub(super) fn hints(
   hits: &mut Vec<(Rect, Action)>,
   area: Rect,

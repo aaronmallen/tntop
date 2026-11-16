@@ -1,7 +1,9 @@
 use super::*;
 use crate::client::State;
 
-pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, symbol: GraphSymbol) {
+pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, settings: &Settings) {
+  let symbol = graph_symbol(settings, theme, settings.graph_symbol_net());
+  let bytes = |value| super::bytes(value, settings.base_10_sizes());
   let mut names: Vec<_> = state
     .history()
     .back()
