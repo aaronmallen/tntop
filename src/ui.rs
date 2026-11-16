@@ -1,4 +1,5 @@
 mod banner;
+mod help;
 mod input;
 mod manager;
 mod menu;

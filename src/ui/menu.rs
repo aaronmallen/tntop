@@ -13,13 +13,18 @@ use super::{Ui, view::panel};
 pub(super) enum Menu {
   Main(usize),
   Options,
-  Help,
+  Help(usize),
   Update,
 }
 
 pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
   if ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering {
     return None;
+  }
+  if let Some(Menu::Help(offset)) = &mut ui.menu
+    && super::help::handle(offset, key)
+  {
+    return Some(false);
   }
   match key {
     KeyCode::Esc | KeyCode::Char('m') => {
@@ -29,7 +34,7 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
       };
     }
     KeyCode::F(2) | KeyCode::Char('o') => ui.menu = Some(Menu::Options),
-    KeyCode::F(1) | KeyCode::Char('?') | KeyCode::Char('h' | 'H') => ui.menu = Some(Menu::Help),
+    KeyCode::F(1) | KeyCode::Char('?') | KeyCode::Char('h' | 'H') => ui.menu = Some(Menu::Help(0)),
     KeyCode::Char('s') => {
       ui.menu = None;
       ui.picker = true;
@@ -46,7 +51,7 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
     }
     KeyCode::Enter if matches!(ui.menu, Some(Menu::Main(_))) => match ui.menu {
       Some(Menu::Main(0)) => ui.menu = Some(Menu::Options),
-      Some(Menu::Main(1)) => ui.menu = Some(Menu::Help),
+      Some(Menu::Main(1)) => ui.menu = Some(Menu::Help(0)),
       Some(Menu::Main(2)) => {
         ui.menu = None;
         ui.picker = true;
@@ -65,7 +70,11 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
   Some(false)
 }
 
-pub(super) fn draw(frame: &mut Frame, ui: &Ui) {
+pub(super) fn draw(frame: &mut Frame, ui: &mut Ui) {
+  if let Some(Menu::Help(offset)) = &mut ui.menu {
+    super::help::draw(frame, offset, &ui.theme);
+    return;
+  }
   let Some(menu) = &ui.menu else { return };
   if let Menu::Main(selected) = menu {
     let rows = ["Options", "Help", "Servers", "Update", "Quit"];
@@ -112,7 +121,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui) {
       vec!["Options are not available yet.", "Esc returns to Main."],
       None,
     ),
-    Menu::Help => (" help ", vec!["Esc returns to Main.", "Ctrl-C quits."], None),
+    Menu::Help(_) => return,
     Menu::Update => return,
   };
   let bounds = frame.area();
@@ -227,7 +236,7 @@ mod tests {
     assert_eq!(ui.menu, None);
     assert_eq!((ui.selected, ui.app_row), (2, 5));
     handle(&mut ui, KeyCode::F(1));
-    assert_eq!(ui.menu, Some(Menu::Help));
+    assert_eq!(ui.menu, Some(Menu::Help(0)));
     handle(&mut ui, KeyCode::Char('s'));
     assert!(ui.picker);
     assert_eq!(ui.menu, None);
@@ -256,7 +265,7 @@ mod tests {
     ui.menu = Some(Menu::Main(0));
     for (width, height) in [(1, 1), (20, 4), (80, 24)] {
       let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-      terminal.draw(|frame| draw(frame, &ui)).unwrap();
+      terminal.draw(|frame| draw(frame, &mut ui)).unwrap();
     }
   }
 
