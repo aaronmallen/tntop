@@ -1,3 +1,4 @@
+mod banner;
 mod input;
 mod manager;
 mod theme;
@@ -9,6 +10,7 @@ use std::{
   time::{Duration, Instant},
 };
 
+pub(crate) use banner::Banner;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use theme::Theme;
 use tokio::sync::watch;

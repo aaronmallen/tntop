@@ -1,13 +1,10 @@
-mod banner;
-
 use std::{path::PathBuf, process::ExitCode};
 
-use banner::Banner;
 use clap::Parser;
 use getset::{CopyGetters, Getters};
 use log::LevelFilter;
 
-use crate::{config::Settings, logger::Logger};
+use crate::{config::Settings, logger::Logger, ui::Banner};
 
 #[derive(CopyGetters, Debug, Getters, Parser)]
 #[clap(about, before_help = Banner::new().with_author().with_version().to_string(), disable_version_flag = true, name = "tntop")]
