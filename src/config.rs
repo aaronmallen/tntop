@@ -40,6 +40,8 @@ pub struct Settings {
   #[get = "pub"]
   theme: Option<PathBuf>,
   #[get_copy = "pub"]
+  theme_background: bool,
+  #[get_copy = "pub"]
   update_ms: u64,
 }
 
@@ -88,6 +90,7 @@ impl Default for Settings {
       save_on_exit: true,
       disable_mouse: false,
       theme: None,
+      theme_background: true,
       update_ms: 2000,
     }
   }

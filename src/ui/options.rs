@@ -15,7 +15,15 @@ pub(super) struct Options {
   category: usize,
   row: usize,
   editing: Option<Input>,
+  theme_choice: Option<ThemeChoice>,
   error: Option<String>,
+}
+
+struct ThemeChoice {
+  names: Vec<String>,
+  index: usize,
+  original: super::Theme,
+  candidate: Option<Settings>,
 }
 
 struct OptionRow {
@@ -26,7 +34,7 @@ struct OptionRow {
 
 impl Options {
   pub fn select_row(&mut self, row: usize) -> bool {
-    if self.editing.is_some() {
+    if self.editing.is_some() || self.theme_choice.is_some() {
       return false;
     }
     self.row = row.min(rows(self.category).len().saturating_sub(1));
@@ -34,7 +42,7 @@ impl Options {
   }
 
   pub fn select_category(&mut self, category: usize) {
-    if self.editing.is_none() {
+    if self.editing.is_none() && self.theme_choice.is_none() {
       self.category = category.min(4);
       self.row = 0;
     }
@@ -51,8 +59,13 @@ fn rows(category: usize) -> Vec<OptionRow> {
       },
       OptionRow {
         key: "theme",
-        label: "Theme path",
-        description: "A btop theme file. Relative paths use the config directory. Empty uses Default.",
+        label: "Color theme",
+        description: "Enter to browse built-in, bundled and user themes. Arrows preview, Enter keeps the choice, Esc restores the previous theme. Explicit paths remain available in the config.",
+      },
+      OptionRow {
+        key: "theme_background",
+        label: "Theme background",
+        description: "Use the theme's background color. Disable to use your terminal background.",
       },
       OptionRow {
         key: "disable_mouse",
@@ -94,6 +107,50 @@ fn text(value: &Value) -> String {
 }
 
 pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Path, key: KeyCode) -> bool {
+  if let Some(mut choice) = ui.options.theme_choice.take() {
+    match key {
+      KeyCode::Esc => {
+        ui.theme = choice.original;
+        ui.options.error = None;
+        return true;
+      }
+      KeyCode::Enter => {
+        if let Some(candidate) = choice.candidate.take() {
+          match apply_preferences(ui, settings, path, candidate) {
+            Ok(()) => {
+              ui.options.error = None;
+              return true;
+            }
+            Err(error) => ui.options.error = Some(error.to_string()),
+          }
+        }
+      }
+      KeyCode::Left | KeyCode::Up | KeyCode::Right | KeyCode::Down | KeyCode::Home | KeyCode::End => {
+        choice.index = match key {
+          KeyCode::Left | KeyCode::Up => (choice.index + choice.names.len() - 1) % choice.names.len(),
+          KeyCode::Home => 0,
+          KeyCode::End => choice.names.len() - 1,
+          _ => (choice.index + 1) % choice.names.len(),
+        };
+        choice.candidate = None;
+        let result = settings
+          .with_preference("theme", Value::String(choice.names[choice.index].clone()))
+          .map_err(super::Error::from)
+          .and_then(|candidate| super::load_theme(&candidate, path).map(|theme| (candidate, theme)));
+        match result {
+          Ok((candidate, theme)) => {
+            ui.theme = theme;
+            choice.candidate = Some(candidate);
+            ui.options.error = None;
+          }
+          Err(error) => ui.options.error = Some(error.to_string()),
+        }
+      }
+      _ => {}
+    }
+    ui.options.theme_choice = Some(choice);
+    return true;
+  }
   let rows = rows(ui.options.category);
   ui.options.row = ui.options.row.min(rows.len().saturating_sub(1));
   if let Some(mut input) = ui.options.editing.take() {
@@ -147,7 +204,29 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
       if let Some(row) = rows.get(ui.options.row) {
         match settings.preferences() {
           Ok(values) => {
-            if let Value::Bool(value) = values[row.key] {
+            if row.key == "theme" {
+              match super::Theme::names(path) {
+                Ok(mut names) => {
+                  let current = settings
+                    .theme()
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Default".into());
+                  let index = names.iter().position(|name| *name == current).unwrap_or_else(|| {
+                    names.push(current);
+                    names.len() - 1
+                  });
+                  ui.options.theme_choice = Some(ThemeChoice {
+                    names,
+                    index,
+                    original: ui.theme.clone(),
+                    candidate: Some(settings.clone()),
+                  });
+                  ui.options.error = None;
+                }
+                Err(error) => ui.options.error = Some(error.to_string()),
+              }
+            } else if let Value::Bool(value) = values[row.key] {
               let result = settings
                 .with_preference(row.key, Value::Bool(!value))
                 .map_err(super::Error::from)
@@ -252,7 +331,18 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     } else {
       ui.theme.style()
     };
-    let value = text(&values[row.key]);
+    let value = if row.key == "theme"
+      && let Some(choice) = &ui.options.theme_choice
+    {
+      format!(
+        "{} ({}/{})",
+        choice.names[choice.index],
+        choice.index + 1,
+        choice.names.len()
+      )
+    } else {
+      text(&values[row.key])
+    };
     let value = if value.is_empty() { "Default".into() } else { value };
     let value = if selected { format!("‹ {value} ›") } else { value };
     let lines = vec![Line::from(row.label), Line::from(value)];
@@ -284,11 +374,24 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     );
   }
   if inner.height >= 2 {
+    let footer = Rect::new(inner.x, inner.bottom() - 1, inner.width, 1);
+    let hints = if ui.options.theme_choice.is_some() {
+      super::mouse::hints(
+        &mut ui.hits,
+        footer,
+        &[
+          ("← prev", KeyCode::Left),
+          ("next →", KeyCode::Right),
+          ("Enter keep", KeyCode::Enter),
+          ("Esc cancel", KeyCode::Esc),
+        ],
+      )
+    } else {
+      Line::from("↑↓ select · Enter edit · Esc back").centered()
+    };
     frame.render_widget(
-      Paragraph::new("↑↓ select · Enter edit · Esc back")
-        .centered()
-        .style(ui.theme.style().fg(ui.theme.color("inactive_fg"))),
-      Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
+      Paragraph::new(hints).style(ui.theme.style().fg(ui.theme.color("inactive_fg"))),
+      footer,
     );
   }
 }
@@ -296,6 +399,58 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  async fn it_previews_cancels_and_saves_themes_without_replacing_sessions() {
+    use ratatui::style::Color;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    std::fs::create_dir(directory.path().join("themes")).unwrap();
+    std::fs::write(
+      directory.path().join("themes/0-preview.theme"),
+      "theme[main_bg]=\"#010203\"",
+    )
+    .unwrap();
+    std::fs::write(directory.path().join("themes/zz-broken.theme"), "bad theme").unwrap();
+    let mut settings = Settings::default();
+    let before = settings.clone();
+    let mut ui = Ui::default();
+    let (_, receiver) = tokio::sync::watch::channel(crate::client::State::default());
+    let task = tokio::spawn(std::future::pending());
+    let id = task.id();
+    ui.sessions.push(Some(super::super::Session {
+      receiver,
+      task,
+    }));
+    ui.options.row = 1;
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    handle(&mut ui, &mut settings, &path, KeyCode::Right);
+    assert!(settings.theme().is_none());
+    let preview = ui.theme.color("main_bg");
+    assert_ne!(preview, Color::Rgb(0, 0, 0));
+    handle(&mut ui, &mut settings, &path, KeyCode::End);
+    assert!(ui.options.error.is_some());
+    assert_eq!(ui.theme.color("main_bg"), preview);
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert!(ui.options.theme_choice.is_some());
+    assert!(settings.theme().is_none());
+    handle(&mut ui, &mut settings, &path, KeyCode::Esc);
+    assert_eq!(ui.theme.color("main_bg"), Color::Rgb(0, 0, 0));
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    handle(&mut ui, &mut settings, &path, KeyCode::Right);
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert!(ui.options.theme_choice.is_none());
+    assert!(settings.theme().is_some());
+    crate::config::save_preferences(&path, &before, &settings).unwrap();
+    assert_eq!(crate::config::load(&path).unwrap().theme(), settings.theme());
+    ui.options.row = 2;
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert!(!settings.theme_background());
+    assert_eq!(ui.theme.color("main_bg"), Color::Reset);
+    handle(&mut ui, &mut settings, &path, KeyCode::Enter);
+    assert_eq!(ui.theme.color("main_bg"), preview);
+    assert_eq!(ui.sessions[0].as_ref().unwrap().task.id(), id);
+  }
 
   #[test]
   fn it_keeps_values_below_names_and_descriptions_on_the_right() {

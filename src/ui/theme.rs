@@ -68,9 +68,17 @@ pub enum Error {
   Io(#[from] std::io::Error),
 }
 
+#[derive(Clone)]
 pub struct Theme(HashMap<String, Color>);
 
 impl Theme {
+  pub fn with_background(mut self, enabled: bool) -> Self {
+    if !enabled {
+      self.0.insert("main_bg".into(), Color::Reset);
+    }
+    self
+  }
+
   pub fn load(path: Option<&Path>, config: &Path) -> Result<Self, Error> {
     let Some(path) = path else {
       return Ok(Self::default());

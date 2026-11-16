@@ -64,6 +64,11 @@ and trust prompts. HTTP sends your API key and server data without encryption.
 ## Themes
 
 All 49 bundled btop themes work offline, with no theme files to install.
+Open **Options → General → Color theme** and press Enter to browse them.
+Arrows preview a theme, Enter keeps it, and Escape restores the prior theme.
+Accepted choices follow **Save on exit**. **Theme background** switches between
+the theme's background and your terminal's background.
+
 Set `theme = "dracula"` in your config to use a bundled name, or use `"Default"`
 for tntop's black background. The bundled notices and source are in [themes](themes/README.md).
 
