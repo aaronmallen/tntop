@@ -3,6 +3,7 @@ mod input;
 mod manager;
 mod menu;
 mod theme;
+mod update;
 mod view;
 
 use std::{
@@ -63,6 +64,7 @@ struct Ui {
   sessions: Vec<Option<Session>>,
   sort: usize,
   theme: Theme,
+  update: update::Update,
 }
 
 impl Drop for Ui {
@@ -94,6 +96,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     sessions: (0..settings.servers().len()).map(|_| None).collect(),
     sort: 0,
     theme: load_theme(&settings, config_path)?,
+    update: Default::default(),
   };
   let level = log::max_level();
   log::set_max_level(log::LevelFilter::Off);
@@ -149,6 +152,9 @@ async fn run_terminal(
   }
   let mut redraw = Instant::now();
   loop {
+    if ui.update.poll().await {
+      redraw = Instant::now();
+    }
     if ui.discovery.as_ref().is_some_and(|task| task.is_finished()) {
       let result = ui.discovery.take().unwrap().await;
       match result {

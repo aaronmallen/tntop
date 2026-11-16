@@ -300,6 +300,7 @@ mod tests {
       sessions: vec![None],
       sort: 0,
       theme: Theme::default(),
+      update: Default::default(),
     }
   }
 

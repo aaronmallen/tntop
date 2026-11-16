@@ -44,6 +44,9 @@ typed-env = "0.3"
 url = { features = ["serde"], version = "2" }
 zeroize = "1"
 
+[target.'cfg(windows)'.dependencies]
+self-replace = "1.5"
+
 [dev-dependencies]
 pretty_assertions = "1"
 rcgen = "0.14"

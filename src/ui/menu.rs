@@ -14,6 +14,7 @@ pub(super) enum Menu {
   Main(usize),
   Options,
   Help,
+  Update,
 }
 
 pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
@@ -35,12 +36,12 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
     }
     KeyCode::Down if matches!(ui.menu, Some(Menu::Main(_))) => {
       if let Some(Menu::Main(row)) = &mut ui.menu {
-        *row = (*row + 1) % 4;
+        *row = (*row + 1) % 5;
       }
     }
     KeyCode::Up if matches!(ui.menu, Some(Menu::Main(_))) => {
       if let Some(Menu::Main(row)) = &mut ui.menu {
-        *row = (*row + 3) % 4;
+        *row = (*row + 4) % 5;
       }
     }
     KeyCode::Enter if matches!(ui.menu, Some(Menu::Main(_))) => match ui.menu {
@@ -50,7 +51,11 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
         ui.menu = None;
         ui.picker = true;
       }
-      Some(Menu::Main(3)) => return Some(true),
+      Some(Menu::Main(3)) => {
+        ui.update.start();
+        ui.menu = Some(Menu::Update);
+      }
+      Some(Menu::Main(4)) => return Some(true),
       _ => {}
     },
     KeyCode::Char('q') if matches!(ui.menu, Some(Menu::Main(_))) => return Some(true),
@@ -63,9 +68,9 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
 pub(super) fn draw(frame: &mut Frame, ui: &Ui) {
   let Some(menu) = &ui.menu else { return };
   if let Menu::Main(selected) = menu {
-    let rows = ["Options", "Help", "Servers", "Quit"];
+    let rows = ["Options", "Help", "Servers", "Update", "Quit"];
     let large = frame.area().width >= 44 && frame.area().height >= 24;
-    let stride = if large { 4 } else { 1 };
+    let stride = if large { if frame.area().height >= 28 { 4 } else { 3 } } else { 1 };
     let area = overlay(frame, rows.len() as u16 * stride, 44, &ui.theme);
     let visible = (area.height / stride).max(1) as usize;
     let start = selected.saturating_sub(visible.saturating_sub(1));
@@ -85,14 +90,30 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui) {
     }
     return;
   }
+  if *menu == Menu::Update {
+    let area = overlay(frame, 9, 74, &ui.theme);
+    frame.render_widget(
+      Paragraph::new(format!("{}\n\nEsc returns to Main.", ui.update.message()))
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .style(ui.theme.style())
+        .block(panel(" update ", "cpu_box", &ui.theme)),
+      area,
+    );
+    return;
+  }
   let (title, rows, selected) = match menu {
-    Menu::Main(row) => (" main ", vec!["Options", "Help", "Servers", "Quit"], Some(*row)),
+    Menu::Main(row) => (
+      " main ",
+      vec!["Options", "Help", "Servers", "Update", "Quit"],
+      Some(*row),
+    ),
     Menu::Options => (
       " options ",
       vec!["Options are not available yet.", "Esc returns to Main."],
       None,
     ),
     Menu::Help => (" help ", vec!["Esc returns to Main.", "Ctrl-C quits."], None),
+    Menu::Update => return,
   };
   let bounds = frame.area();
   let width = bounds.width.min(44);

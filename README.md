@@ -41,6 +41,17 @@ Linux needs a running, unlocked Secret Service keyring to store API keys.
 See the [ArchWiki keyring setup guide](https://wiki.archlinux.org/title/GNOME/Keyring)
 for daemon and session setup, including systems without a desktop.
 
+## Update
+
+Choose **Update** in the main menu to install the latest stable release. It reports
+both versions, skips older releases, and checks the archive's SHA-256 checksum
+before replacing the executable. It leaves your settings and saved API keys alone.
+
+Self-update needs `curl` and `tar` on PATH, including Windows' built-in versions.
+You must have write access to the executable's directory. The updater never asks
+for elevated access. On Windows, it arranges cleanup of the running executable
+after exit.
+
 ## Connections
 
 Add a server using its HTTP or HTTPS origin, such as `https://nas.local` or

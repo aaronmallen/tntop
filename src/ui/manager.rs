@@ -286,6 +286,7 @@ mod tests {
       sessions: vec![],
       sort: 0,
       theme: Default::default(),
+      update: Default::default(),
     }
   }
 
