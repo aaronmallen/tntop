@@ -7,35 +7,39 @@ A [TUI] to monitor resources and apps on your [TrueNAS] server from a terminal.
 
 ## Install
 
-Bash or Zsh:
+Run the installer directly, without saving the script first.
+
+Bash, Zsh or Fish:
 
 ```sh
-curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh -o /tmp/tntop-install.sh
-sh /tmp/tntop-install.sh
-```
-
-Fish:
-
-```fish
-curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh -o /tmp/tntop-install.sh
-sh /tmp/tntop-install.sh
+curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh | sh
 ```
 
 PowerShell 7 on Windows:
 
 ```powershell
-Invoke-WebRequest https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.ps1 -OutFile "$env:TEMP\tntop-install.ps1"
-& "$env:TEMP\tntop-install.ps1"
+Invoke-RestMethod https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.ps1 | Invoke-Expression
 ```
 
 The installers select the latest stable release and verify its SHA-256 checksum.
 Published targets are macOS ARM64, Linux x86-64 and Windows x86-64. Other platforms
 must build from source. Run the installer again to update.
 
-To choose a version or directory, use `sh /tmp/tntop-install.sh 0.1.0 "$HOME/.local/bin"`,
-or `& "$env:TEMP\tntop-install.ps1" -Version 0.1.0 -Directory "$env:LOCALAPPDATA\tntop\bin"`.
+To choose a version or directory:
+
+```sh
+curl -fsSL https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.sh | sh -s -- 0.2.0 "$HOME/.local/bin"
+```
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod https://aaronmallen.dev/aaron/tntop/raw/branch/main/assets/install.ps1))) -Version 0.2.0 -Directory "$env:LOCALAPPDATA\tntop\bin"
+```
+
 Defaults are `~/.local/bin` on Unix and `%LOCALAPPDATA%\tntop\bin` on Windows.
 The installer prints PATH setup guidance when needed.
+
+For manual installation, download an archive from [Releases], verify it against
+the release's `SHA256SUMS`, and extract the binary into a directory on your PATH.
 
 Linux needs a running, unlocked Secret Service keyring to store API keys.
 See the [ArchWiki keyring setup guide](https://wiki.archlinux.org/title/GNOME/Keyring)
@@ -348,5 +352,6 @@ tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
 
 [Aaron Allen]: https://aaronmallen.me
 [AGPLv3 License]: LICENSE
+[Releases]: https://aaronmallen.dev/aaron/tntop/releases
 [TrueNAS]: https://www.truenas.com/
 [TUI]: https://en.wikipedia.org/wiki/Text-based_user_interface
