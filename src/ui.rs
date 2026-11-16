@@ -1,6 +1,7 @@
 mod banner;
 mod input;
 mod manager;
+mod menu;
 mod theme;
 mod view;
 
@@ -55,6 +56,7 @@ struct Ui {
   filtering: bool,
   interface: usize,
   message: Option<String>,
+  menu: Option<menu::Menu>,
   picker: bool,
   pool: usize,
   selected: usize,
@@ -85,6 +87,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     filtering: false,
     interface: 0,
     message: None,
+    menu: None,
     picker: selected.is_none(),
     pool: 0,
     selected: selected.unwrap_or(0),
@@ -211,10 +214,14 @@ async fn run_terminal(
         }
         continue;
       }
+      if let Some(quit) = menu::handle(ui, key.code) {
+        if quit {
+          return Ok(());
+        }
+        continue;
+      }
       match key.code {
         KeyCode::Char('q') => return Ok(()),
-        KeyCode::Esc if ui.picker => return Ok(()),
-        KeyCode::Esc | KeyCode::Char('s') => ui.picker = true,
         KeyCode::Down | KeyCode::Char('j') if ui.picker => {
           ui.selected = (ui.selected + 1) % settings.servers().len().max(1)
         }
@@ -248,12 +255,13 @@ async fn run_terminal(
         KeyCode::Down | KeyCode::Char('j') => ui.app_row = ui.app_row.saturating_add(1),
         KeyCode::Up | KeyCode::Char('k') => ui.app_row = ui.app_row.saturating_sub(1),
         KeyCode::Char('/') if !ui.picker => ui.filtering = true,
-        KeyCode::Char('o') if !ui.picker => {
-          ui.sort = (ui.sort + 1) % 4;
+        KeyCode::Left | KeyCode::Right if !ui.picker => {
+          ui.sort = (ui.sort + if key.code == KeyCode::Right { 1 } else { 3 }) % 4;
           ui.app_row = 0;
         }
         KeyCode::Char('n') if !ui.picker => ui.interface = ui.interface.wrapping_add(1),
-        KeyCode::Char('p') if !ui.picker => ui.pool = ui.pool.wrapping_add(1),
+        KeyCode::Char(']') if !ui.picker => ui.pool = ui.pool.wrapping_add(1),
+        KeyCode::Char('[') if !ui.picker => ui.pool = ui.pool.saturating_sub(1),
         _ => {}
       }
     }

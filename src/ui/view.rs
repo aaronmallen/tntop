@@ -15,6 +15,17 @@ use super::{Ui, theme::Theme};
 use crate::config::Settings;
 
 pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
+  draw_content(frame, ui, settings);
+  if ui.menu.is_some() {
+    let area = frame.area();
+    frame
+      .buffer_mut()
+      .set_style(area, ui.theme.style().fg(ui.theme.color("inactive_fg")));
+  }
+  super::menu::draw(frame, ui);
+}
+
+fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   let theme = &ui.theme;
   frame.render_widget(Block::default().style(theme.style()), frame.area());
   if frame.area().width < 70 || frame.area().height < 24 {
@@ -92,7 +103,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   };
   frame.render_widget(
     Paragraph::new(vec![
-      Line::from(" q quit  s/Esc servers  ↑↓ apps  / filter  o sort  n interface  p pool"),
+      Line::from(" m/Esc menu  s servers  ↑↓ apps  / filter  ←→ sort  n interface  [] pool"),
       Line::styled(
         ui.message.clone().unwrap_or(status),
         Style::default().fg(ui.theme.color("graph_text")),
@@ -282,6 +293,7 @@ mod tests {
       filtering: false,
       interface: 0,
       message: None,
+      menu: None,
       picker: false,
       pool: 0,
       selected: 0,

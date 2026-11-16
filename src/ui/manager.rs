@@ -279,6 +279,7 @@ mod tests {
       filtering: false,
       interface: 0,
       message: None,
+      menu: None,
       picker: true,
       pool: 0,
       selected: 0,
