@@ -204,6 +204,17 @@ fn rows(category: usize) -> Vec<OptionRow> {
           OptionRow { key: "io_graph_scale", label: "I/O scale (bytes/s)", description: "Fixed graph maximum in bytes per second. Zero scales to retained history. Combined mode scales read plus write, separate mode scales each direction." },
         ]);
       }
+      if category == 3 {
+        rows.extend([
+          OptionRow { key: "net_iface", label: "Preferred interface", description: "Interface name to prefer on each server. Empty or absent falls back to an up interface, then the first available. b/n cycles and saves this preference." },
+          OptionRow { key: "net_auto", label: "Automatic scale", description: "Scale each graph to retained history. Turn off for fixed byte-per-second maxima. The a key toggles this." },
+          OptionRow { key: "net_sync", label: "Sync scales", description: "Use the larger download/upload maximum for both graphs. The y key toggles this in either automatic or fixed mode." },
+          OptionRow { key: "net_download", label: "Download scale (bytes/s)", description: "Positive fixed maximum in bytes per second. Used when automatic scaling is off." },
+          OptionRow { key: "net_upload", label: "Upload scale (bytes/s)", description: "Positive fixed maximum in bytes per second. Used when automatic scaling is off." },
+          OptionRow { key: "net_swap", label: "Swap graph positions", description: "Show upload above download. Direction labels, gradients, rates and counters retain their meaning." },
+          OptionRow { key: "net_bitrate", label: "Bitrate units", description: "Show rates in bits per second, using the General base-10/binary preference. Session estimates stay in bytes. z toggles a local reset baseline for this server/interface." },
+        ]);
+      }
       rows
     }
     _ => Vec::new(),

@@ -132,7 +132,7 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     memory::draw(frame, memory, &state, &mut ui.pool, theme, settings);
   }
   if !network.is_empty() {
-    network::draw(frame, network, &state, ui.interface, theme, settings);
+    network::draw(frame, network, &state, ui, settings);
   }
   if !apps.is_empty() {
     apps::draw(frame, apps, &state, ui, settings);
@@ -500,7 +500,7 @@ mod tests {
       discovery: None,
       filter: String::new(),
       filtering: false,
-      interface: 0,
+      net_baselines: Default::default(),
       message: None,
       menu: None,
       options: Default::default(),

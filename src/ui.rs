@@ -7,6 +7,7 @@ mod layout;
 mod manager;
 mod menu;
 mod mouse;
+mod network;
 mod options;
 mod preset;
 mod storage;
@@ -65,7 +66,7 @@ struct Ui {
   discovery: Option<tokio::task::JoinHandle<Result<String, client::Error>>>,
   filter: String,
   filtering: bool,
-  interface: usize,
+  net_baselines: std::collections::HashMap<(usize, String), (f64, f64)>,
   message: Option<String>,
   menu: Option<menu::Menu>,
   options: options::Options,
@@ -113,7 +114,7 @@ pub async fn run(
     discovery: None,
     filter: String::new(),
     filtering: false,
-    interface: 0,
+    net_baselines: Default::default(),
     message: None,
     menu: None,
     options: Default::default(),
@@ -300,6 +301,9 @@ async fn run_terminal(
       if !ui.picker && preset::handle(ui, settings, config_path, key.code) {
         continue;
       }
+      if !ui.picker && network::handle(ui, settings, config_path, key.code) {
+        continue;
+      }
       match key.code {
         KeyCode::Char('+' | '-') => {
           let value = if key.code == KeyCode::Char('+') {
@@ -352,7 +356,6 @@ async fn run_terminal(
           ui.sort = (ui.sort + if key.code == KeyCode::Right { 1 } else { 3 }) % 4;
           ui.app_row = 0;
         }
-        KeyCode::Char('n') if !ui.picker => ui.interface = ui.interface.wrapping_add(1),
         KeyCode::Char(']') if !ui.picker => storage::cycle(ui, settings, false),
         KeyCode::Char('[') if !ui.picker => storage::cycle(ui, settings, true),
         _ => {}

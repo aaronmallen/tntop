@@ -195,6 +195,21 @@ write on a shared scale. **I/O scale (bytes/s)** sets a fixed maximum;
 zero uses retained history. Capacity belongs to each pool, but disk busy,
 read/write rates and IOPS always describe **all disks**.
 
+## Network
+
+Set a **Preferred interface** or use **b/n** to cycle and save one.
+If it is absent on another server, tntop uses an up interface, then the
+first available, while keeping your preference.
+
+**a** toggles automatic/fixed scaling; **y** gives both directions the
+larger scale. Set fixed maxima in bytes/s in Network Options. Swap graph
+positions or enable bitrate units there. Bitrates use decimal or binary
+units from General Options; totals stay in bytes.
+
+**z** sets a local baseline for the current server/interface. Press it
+again to show the full session estimate. Labels keep `~` because these
+totals come from sampled rates. This never changes server counters.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

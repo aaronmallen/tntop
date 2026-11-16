@@ -187,6 +187,7 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
         config::remove_server(path, &server)?;
         settings.servers_mut().remove(ui.selected);
         ui.sessions.remove(ui.selected);
+        ui.net_baselines.clear();
         ui.selected = ui.selected.min(settings.servers().len().saturating_sub(1));
         ui.dialog = None;
         ui.message = Some(format!("Removed {}", server.name()));
@@ -238,6 +239,7 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
     return Ok(());
   };
   if ui.sessions[ui.selected].is_none() {
+    ui.net_baselines.retain(|(server, _), _| *server != ui.selected);
     ui.picker = true;
     let Some(key) = credentials::load(server).await? else {
       ui.dialog = Some(Dialog::Key {
@@ -257,7 +259,6 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
     });
   }
   ui.app_row = 0;
-  ui.interface = 0;
   ui.pool = None;
   ui.filter.clear();
   ui.message = None;
@@ -279,7 +280,7 @@ mod tests {
       discovery: None,
       filter: String::new(),
       filtering: false,
-      interface: 0,
+      net_baselines: Default::default(),
       message: None,
       menu: None,
       options: Default::default(),

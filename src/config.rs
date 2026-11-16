@@ -36,6 +36,20 @@ pub enum Error {
 #[serde(default)]
 pub struct Settings {
   #[get = "pub"]
+  net_iface: String,
+  #[get_copy = "pub"]
+  net_auto: bool,
+  #[get_copy = "pub"]
+  net_sync: bool,
+  #[get_copy = "pub"]
+  net_swap: bool,
+  #[get_copy = "pub"]
+  net_bitrate: bool,
+  #[get_copy = "pub"]
+  net_download: u64,
+  #[get_copy = "pub"]
+  net_upload: u64,
+  #[get = "pub"]
   disks_filter: String,
   #[get_copy = "pub"]
   show_io_stat: bool,
@@ -156,6 +170,11 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    if self.net_download == 0 || self.net_upload == 0 {
+      return Err(Error::Invalid(
+        "network fixed scales must be greater than zero bytes/s".into(),
+      ));
+    }
     for source in [&self.cpu_graph_upper, &self.cpu_graph_lower] {
       if !matches!(source.as_str(), "auto" | "total" | "busiest")
         && !source
@@ -199,6 +218,13 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      net_iface: String::new(),
+      net_auto: true,
+      net_sync: false,
+      net_swap: false,
+      net_bitrate: false,
+      net_download: 10485760,
+      net_upload: 10485760,
       disks_filter: String::new(),
       show_io_stat: true,
       io_mode: false,
