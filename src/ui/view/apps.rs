@@ -7,12 +7,17 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   let theme = &ui.theme;
   let symbol = graph_symbol(settings, theme, settings.graph_symbol_apps());
   let bytes = |value| super::bytes(value, settings.base_10_sizes());
-  let sort = ["cpu", "memory", "name", "state"][ui.sort];
-  let title = format!(" apps / {sort} {}{} ", ui.filter, if ui.filtering { "▏" } else { "" });
+  let title = format!(
+    " apps / {}{} {}{} ",
+    settings.apps_sort(),
+    if settings.apps_reversed() { " reversed" } else { "" },
+    ui.filter,
+    if ui.filtering { "▏" } else { "" }
+  );
   let block = panel(&title, "proc_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);
-  let Some(apps) = state.apps() else {
+  let Some(all_apps) = state.apps() else {
     frame.render_widget(
       Paragraph::new(state.apps_error().as_deref().unwrap_or("Waiting for installed apps…")).wrap(Wrap {
         trim: true,
@@ -24,63 +29,94 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   let [table_area, detail, status] =
     Layout::vertical([Constraint::Min(1), Constraint::Length(3), Constraint::Length(1)]).areas(inner);
   let stats = state.app_history().back();
-  let mut apps: Vec<_> = apps
-    .iter()
-    .filter(|app| app.name().to_lowercase().contains(&ui.filter.to_lowercase()))
-    .collect();
-  apps.sort_by(|a, b| {
-    let a_stats = stats.and_then(|stats| stats.get(a.name()));
-    let b_stats = stats.and_then(|stats| stats.get(b.name()));
-    let order = match ui.sort {
-      0 => b_stats
-        .map(|stats| *stats.cpu_usage())
-        .partial_cmp(&a_stats.map(|stats| *stats.cpu_usage()))
-        .unwrap_or(std::cmp::Ordering::Equal),
-      1 => b_stats
-        .map(|stats| *stats.memory())
-        .cmp(&a_stats.map(|stats| *stats.memory())),
-      3 => a.state().cmp(b.state()),
-      _ => a.name().cmp(b.name()),
-    };
-    order.then_with(|| a.name().cmp(b.name()))
-  });
+  let apps = super::super::apps::ordered(state, &ui.filter, settings);
+  if let Some(selected) = &ui.app_selected {
+    if let Some(index) = apps.iter().position(|app| app.name() == selected) {
+      ui.app_row = index;
+    } else if !all_apps.iter().any(|app| app.name() == selected) {
+      ui.app_selected = None;
+    } else {
+      ui.app_row = 0;
+    }
+  }
   ui.app_row = ui.app_row.min(apps.len().saturating_sub(1));
+  if ui.app_selected.is_none() {
+    ui.app_selected = apps.get(ui.app_row).map(|app| app.name().clone());
+  }
   let wide = inner.width >= 85;
   let compact = inner.width < 55;
   let rows = apps.iter().map(|app| {
     let stats = stats.and_then(|stats| stats.get(app.name()));
-    let color = match app.state().as_str() {
-      "RUNNING" => theme.gradient("cpu", 0.0),
-      "CRASHED" => theme.gradient("cpu", 1.0),
-      "STOPPED" => theme.color("inactive_fg"),
-      _ => theme.gradient("cpu", 0.5),
+    let color = if !settings.apps_colors() {
+      theme.color("main_fg")
+    } else {
+      match app.state().as_str() {
+        "RUNNING" => theme.gradient("cpu", 0.0),
+        "CRASHED" => theme.gradient("cpu", 1.0),
+        "STOPPED" => theme.color("inactive_fg"),
+        _ => theme.gradient("cpu", 0.5),
+      }
     };
     let cpu = stats
-      .map(|stats| format!("{:5.1}", stats.cpu_usage()))
+      .and_then(|stats| super::super::apps::cpu(*stats.cpu_usage(), state, settings))
+      .map(|cpu| format!("{cpu:5.1}"))
       .unwrap_or_else(|| "  N/A".into());
     let memory = stats
-      .map(|stats| bytes(*stats.memory() as f64))
+      .and_then(|stats| {
+        if settings.apps_mem_bytes() {
+          Some(bytes(*stats.memory() as f64))
+        } else {
+          state.history().back().map(|sample| {
+            format!(
+              "{:.1}%",
+              *stats.memory() as f64 / sample.memory().physical_memory_total() as f64 * 100.0
+            )
+          })
+        }
+      })
       .unwrap_or_else(|| "N/A".into());
     let mut cells = vec![
       Cell::from(app.name().as_str()),
       Cell::from(app.state().as_str()).style(Style::default().fg(color)),
       Cell::from(if app.update() == "available" { "YES" } else { "-" })
-        .style(Style::default().fg(theme.color("hi_fg"))),
+        .style(Style::default().fg(theme.color(if settings.apps_colors() { "hi_fg" } else { "main_fg" }))),
     ];
-    if !compact {
+    if !compact && settings.apps_cpu_graphs() {
       let history = sparkline(
-        state
-          .app_history()
-          .iter()
-          .map(|sample| sample.get(app.name()).map(|stats| *stats.cpu_usage()).unwrap_or(0.0)),
+        state.app_history().iter().map(|sample| {
+          sample
+            .get(app.name())
+            .map(|stats| *stats.cpu_usage())
+            .unwrap_or(f64::NAN)
+        }),
         8,
         symbol,
         theme,
       );
-      cells.push(Cell::from(history).style(Style::default().fg(theme.color("proc_misc"))));
+      cells.push(
+        Cell::from(history).style(Style::default().fg(theme.color(if settings.apps_colors() {
+          "proc_misc"
+        } else {
+          "main_fg"
+        }))),
+      );
     }
-    cells.push(Cell::from(cpu));
-    cells.push(Cell::from(memory));
+    let cpu_color = if settings.apps_colors() && settings.apps_gradient() {
+      theme.gradient("cpu", stats.map(|stats| *stats.cpu_usage() / 100.0).unwrap_or(0.0))
+    } else {
+      theme.color("main_fg")
+    };
+    cells.push(Cell::from(cpu).style(Style::default().fg(cpu_color)));
+    let memory_color = if settings.apps_colors() && settings.apps_gradient() {
+      let ratio = stats
+        .zip(state.history().back())
+        .map(|(stats, sample)| *stats.memory() as f64 / sample.memory().physical_memory_total() as f64)
+        .unwrap_or(0.0);
+      theme.gradient("used", ratio)
+    } else {
+      theme.color("main_fg")
+    };
+    cells.push(Cell::from(memory).style(Style::default().fg(memory_color)));
     if wide {
       cells.push(Cell::from(
         stats
@@ -101,12 +137,15 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     Constraint::Length(3),
   ];
   let mut headings = vec!["NAME", "STATE", "UPD"];
-  if !compact {
+  if !compact && settings.apps_cpu_graphs() {
     columns.push(Constraint::Length(8));
     headings.push("CPU");
   }
-  columns.extend([Constraint::Length(5), Constraint::Length(10)]);
-  headings.extend(["CPU%", "MEMORY"]);
+  columns.extend([Constraint::Length(6), Constraint::Length(10)]);
+  headings.extend([
+    if settings.apps_per_core() { "CORE%" } else { "HOST%" },
+    if settings.apps_mem_bytes() { "MEMORY" } else { "RAM%" },
+  ]);
   if wide {
     columns.extend([Constraint::Length(13), Constraint::Length(13)]);
     headings.extend(["DOWNLOAD", "UPLOAD"]);
@@ -176,13 +215,90 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     .map(|error| format!("stale: {error}"))
     .unwrap_or_else(|| {
       format!(
-        "{} apps | stats {} | host CPU%",
+        "{} apps | stats {} | {} CPU%",
         apps.len(),
-        age(*state.app_stats_updated_at())
+        age(*state.app_stats_updated_at()),
+        if settings.apps_per_core() {
+          "core; graphs host"
+        } else {
+          "host"
+        }
       )
     });
   frame.render_widget(
     Paragraph::new(text).style(Style::default().fg(theme.color("graph_text"))),
     status,
   );
+}
+
+#[cfg(test)]
+mod tests {
+  use serde_json::json;
+
+  use super::*;
+
+  #[test]
+  fn it_keeps_identity_through_sort_and_filter_and_renders_the_selected_units() {
+    let state = crate::client::fixtures::state();
+    let mut ui = Ui::default();
+    ui.app_selected = Some("postgres".into());
+    let mut settings = Settings::default();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 25)).unwrap();
+    for sort in ["cpu", "memory", "name", "state"] {
+      settings = settings.with_preference("apps_sort", json!(sort)).unwrap();
+      for reversed in [false, true] {
+        settings = settings.with_preference("apps_reversed", json!(reversed)).unwrap();
+        terminal
+          .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+          .unwrap();
+        assert_eq!(ui.app_selected.as_deref(), Some("postgres"));
+        assert_eq!(
+          super::super::super::apps::ordered(&state, "", &settings)[ui.app_row].name(),
+          "postgres"
+        );
+      }
+    }
+    ui.filter = "forge".into();
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+      .unwrap();
+    assert_eq!(ui.app_selected.as_deref(), Some("postgres"));
+    ui.filter.clear();
+    settings = settings
+      .with_preference("apps_mem_bytes", json!(false))
+      .unwrap()
+      .with_preference("apps_per_core", json!(true))
+      .unwrap()
+      .with_preference("apps_cpu_graphs", json!(false))
+      .unwrap()
+      .with_preference("apps_colors", json!(false))
+      .unwrap();
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+      .unwrap();
+    let text: String = terminal
+      .backend()
+      .buffer()
+      .content
+      .iter()
+      .map(|cell| cell.symbol())
+      .collect();
+    assert!(text.contains("postgres  18.0"));
+    assert!(text.contains("CORE%"));
+    assert!(text.contains("RAM%"));
+    assert!(text.contains("2.3%"));
+    assert!(!text.contains("GiB"));
+    let missing = crate::client::fixtures::without_app_stats();
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &missing, &mut ui, &settings))
+      .unwrap();
+    let text: String = terminal
+      .backend()
+      .buffer()
+      .content
+      .iter()
+      .map(|cell| cell.symbol())
+      .collect();
+    assert!(text.contains("N/A"));
+  }
 }

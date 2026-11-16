@@ -496,6 +496,7 @@ mod tests {
     Ui {
       background: None,
       app_row: 0,
+      app_selected: None,
       dialog: None,
       discovery: None,
       filter: String::new(),
@@ -510,7 +511,6 @@ mod tests {
       pool: None,
       selected: 0,
       sessions: vec![None],
-      sort: 0,
       theme: Theme::default(),
       update: Default::default(),
     }
@@ -536,10 +536,13 @@ mod tests {
         assert!(output.contains("update: available"));
         assert!(!output.contains("postgres"));
         ui.filter.clear();
-        ui.sort = 2;
+        let settings = Settings::default()
+          .with_preference("apps_sort", serde_json::json!("name"))
+          .unwrap();
+        ui.app_selected = None;
         ui.app_row = 1;
         terminal
-          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, &Settings::default()))
+          .draw(|frame| super::super::super::apps::draw(frame, frame.area(), &state, &mut ui, &settings))
           .unwrap();
         assert!(text(&terminal).contains("jellyfin  10.11"));
       }

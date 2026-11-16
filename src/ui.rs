@@ -1,3 +1,4 @@
+mod apps;
 mod banner;
 mod clock;
 mod display;
@@ -62,6 +63,7 @@ impl Drop for Session {
 struct Ui {
   background: Option<ratatui::buffer::Buffer>,
   app_row: usize,
+  app_selected: Option<String>,
   dialog: Option<manager::Dialog>,
   discovery: Option<tokio::task::JoinHandle<Result<String, client::Error>>>,
   filter: String,
@@ -76,7 +78,6 @@ struct Ui {
   pool: Option<String>,
   selected: usize,
   sessions: Vec<Option<Session>>,
-  sort: usize,
   theme: Theme,
   update: update::Update,
 }
@@ -110,6 +111,7 @@ pub async fn run(
   let mut ui = Ui {
     background: None,
     app_row: 0,
+    app_selected: None,
     dialog: None,
     discovery: None,
     filter: String::new(),
@@ -124,7 +126,6 @@ pub async fn run(
     pool: None,
     selected: selected.unwrap_or(0),
     sessions: (0..settings.servers().len()).map(|_| None).collect(),
-    sort: 0,
     theme: load_theme(&settings, config_path)?,
     update: Default::default(),
   };
@@ -304,6 +305,9 @@ async fn run_terminal(
       if !ui.picker && network::handle(ui, settings, config_path, key.code) {
         continue;
       }
+      if !ui.picker && apps::handle(ui, settings, config_path, key.code) {
+        continue;
+      }
       match key.code {
         KeyCode::Char('+' | '-') => {
           let value = if key.code == KeyCode::Char('+') {
@@ -349,13 +353,15 @@ async fn run_terminal(
           });
         }
         KeyCode::Char('t') if ui.picker && !settings.servers().is_empty() => manager::discover(ui, settings),
-        KeyCode::Down => ui.app_row = ui.app_row.saturating_add(1),
-        KeyCode::Up => ui.app_row = ui.app_row.saturating_sub(1),
-        KeyCode::Char('/') if !ui.picker => ui.filtering = true,
-        KeyCode::Left | KeyCode::Right if !ui.picker => {
-          ui.sort = (ui.sort + if key.code == KeyCode::Right { 1 } else { 3 }) % 4;
-          ui.app_row = 0;
+        KeyCode::Down => {
+          ui.app_selected = None;
+          ui.app_row = ui.app_row.saturating_add(1);
         }
+        KeyCode::Up => {
+          ui.app_selected = None;
+          ui.app_row = ui.app_row.saturating_sub(1);
+        }
+        KeyCode::Char('/') if !ui.picker => ui.filtering = true,
         KeyCode::Char(']') if !ui.picker => storage::cycle(ui, settings, false),
         KeyCode::Char('[') if !ui.picker => storage::cycle(ui, settings, true),
         _ => {}

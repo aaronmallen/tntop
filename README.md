@@ -210,6 +210,18 @@ units from General Options; totals stay in bytes.
 again to show the full session estimate. Labels keep `~` because these
 totals come from sampled rates. This never changes server counters.
 
+## App display
+
+Apps Options sorts by CPU, memory, name or state. **Left/Right** cycles
+fields; **r** reverses the order. Ties sort by name, missing stats stay
+last, and selection follows app identity across sorts and filters.
+
+Choose app colors, resource gradients and CPU history graphs. Memory can
+show bytes or percent of remote physical RAM. **HOST%** is the reported
+share of host CPU; **CORE%** multiplies it by the current logical core
+count and may exceed 100. Graphs always show host capacity. Missing
+stats or core counts remain **N/A**.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

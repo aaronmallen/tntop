@@ -52,6 +52,7 @@ fn lines() -> Vec<&'static str> {
     "  Header preset     Click arrows to cycle; manual means a changed layout",
     "  Up / Down         Select an app",
     "  Left / Right      Change app sort order",
+    "  r                 Reverse app sort order",
     "  /                 Edit the app filter",
     "  Enter / Esc       Leave the app filter",
     "  b / n             Previous / next network interface",

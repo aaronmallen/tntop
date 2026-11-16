@@ -259,6 +259,7 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
     });
   }
   ui.app_row = 0;
+  ui.app_selected = None;
   ui.pool = None;
   ui.filter.clear();
   ui.message = None;
@@ -276,6 +277,7 @@ mod tests {
     Ui {
       background: None,
       app_row: 0,
+      app_selected: None,
       dialog: None,
       discovery: None,
       filter: String::new(),
@@ -290,7 +292,6 @@ mod tests {
       pool: None,
       selected: 0,
       sessions: vec![],
-      sort: 0,
       theme: Default::default(),
       update: Default::default(),
     }

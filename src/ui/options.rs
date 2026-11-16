@@ -215,6 +215,17 @@ fn rows(category: usize) -> Vec<OptionRow> {
           OptionRow { key: "net_bitrate", label: "Bitrate units", description: "Show rates in bits per second, using the General base-10/binary preference. Session estimates stay in bytes. z toggles a local reset baseline for this server/interface." },
         ]);
       }
+      if category == 4 {
+        rows.extend([
+          OptionRow { key: "apps_sort", label: "Sort apps by", description: "Cycle CPU, memory, name and state. Left/Right also cycles. Missing stats stay last; ties sort by name." },
+          OptionRow { key: "apps_reversed", label: "Reverse app order", description: "Reverse the selected sort field. The r key toggles this. Selection follows app identity." },
+          OptionRow { key: "apps_colors", label: "App colors", description: "Use state, update and resource colors. Turn off for plain rows; selection stays highlighted." },
+          OptionRow { key: "apps_gradient", label: "Resource gradients", description: "Color CPU and memory values by their share of host resources when App colors is on." },
+          OptionRow { key: "apps_mem_bytes", label: "Memory in bytes", description: "Show byte units. Turn off for percent of remote physical RAM. Missing app stats or RAM remain N/A." },
+          OptionRow { key: "apps_per_core", label: "Per-core CPU", description: "Multiply reported host CPU percent by the current logical core count. CORE% can exceed 100. Missing core count shows N/A. Graphs always show host capacity." },
+          OptionRow { key: "apps_cpu_graphs", label: "App CPU graphs", description: "Show per-app CPU history when space allows. Graph style follows the Apps graph-symbol setting." },
+        ]);
+      }
       rows
     }
     _ => Vec::new(),
@@ -380,7 +391,7 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
               ui.options.error = result.err().map(|error| error.to_string());
             } else if row.key.starts_with("graph_symbol")
-              || matches!(row.key, "disable_presets" | "log_level" | "temp_scale")
+              || matches!(row.key, "disable_presets" | "log_level" | "temp_scale" | "apps_sort")
             {
               let choices = if row.key == "disable_presets" {
                 &["off", "default", "custom", "all"][..]
@@ -388,6 +399,8 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 &["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"][..]
               } else if row.key == "temp_scale" {
                 &["celsius", "fahrenheit", "kelvin", "rankine"][..]
+              } else if row.key == "apps_sort" {
+                &["cpu", "memory", "name", "state"][..]
               } else if row.key == "graph_symbol" {
                 &["braille", "block", "tty"][..]
               } else {

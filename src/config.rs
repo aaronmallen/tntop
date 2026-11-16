@@ -36,6 +36,20 @@ pub enum Error {
 #[serde(default)]
 pub struct Settings {
   #[get = "pub"]
+  apps_sort: String,
+  #[get_copy = "pub"]
+  apps_reversed: bool,
+  #[get_copy = "pub"]
+  apps_colors: bool,
+  #[get_copy = "pub"]
+  apps_gradient: bool,
+  #[get_copy = "pub"]
+  apps_mem_bytes: bool,
+  #[get_copy = "pub"]
+  apps_per_core: bool,
+  #[get_copy = "pub"]
+  apps_cpu_graphs: bool,
+  #[get = "pub"]
   net_iface: String,
   #[get_copy = "pub"]
   net_auto: bool,
@@ -170,6 +184,9 @@ impl Settings {
   }
 
   pub fn validate(&self) -> Result<(), Error> {
+    if !matches!(self.apps_sort.as_str(), "cpu" | "memory" | "name" | "state") {
+      return Err(Error::Invalid("apps_sort must be cpu, memory, name or state".into()));
+    }
     if self.net_download == 0 || self.net_upload == 0 {
       return Err(Error::Invalid(
         "network fixed scales must be greater than zero bytes/s".into(),
@@ -218,6 +235,13 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      apps_sort: "cpu".into(),
+      apps_reversed: false,
+      apps_colors: true,
+      apps_gradient: true,
+      apps_mem_bytes: true,
+      apps_per_core: false,
+      apps_cpu_graphs: true,
       net_iface: String::new(),
       net_auto: true,
       net_sync: false,

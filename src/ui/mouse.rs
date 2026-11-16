@@ -104,6 +104,7 @@ pub(super) fn key(ui: &mut Ui, event: MouseEvent, disabled: bool) -> Option<KeyE
       }
       Action::App(row) => {
         ui.app_row = row;
+        ui.app_selected = None;
         return None;
       }
       Action::Scroll => return None,
