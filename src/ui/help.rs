@@ -44,6 +44,8 @@ fn lines() -> Vec<&'static str> {
     "",
     "Dashboard",
     "  1 / 2 / 3 / 4     Toggle CPU / Memory / Network / Apps",
+    "  p / P             Next / previous enabled preset",
+    "  Header preset     Click arrows to cycle; manual means a changed layout",
     "  Up / Down         Select an app",
     "  Left / Right      Change app sort order",
     "  /                 Edit the app filter",

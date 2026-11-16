@@ -97,6 +97,11 @@ fn rows(category: usize) -> Vec<OptionRow> {
         label: "Presets",
         description: "Up to nine layouts, separated by spaces. Each layout lists panel:position:graph entries separated by commas. Panels: cpu, mem, net, apps (or proc). Position: 0/1. Graph: default, braille, block, tty.",
       },
+      OptionRow {
+        key: "disable_presets",
+        label: "Disable presets",
+        description: "Enter cycles off, default, custom and all. Default disables preset 0; custom disables presets 1–9. Cycling skips disabled choices.",
+      },
     ],
     1..=4 => {
       let mut rows = vec![
@@ -285,8 +290,10 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 }
                 Err(error) => ui.options.error = Some(error.to_string()),
               }
-            } else if row.key.starts_with("graph_symbol") {
-              let choices = if row.key == "graph_symbol" {
+            } else if row.key.starts_with("graph_symbol") || row.key == "disable_presets" {
+              let choices = if row.key == "disable_presets" {
+                &["off", "default", "custom", "all"][..]
+              } else if row.key == "graph_symbol" {
                 &["braille", "block", "tty"][..]
               } else {
                 &["default", "braille", "block", "tty"][..]

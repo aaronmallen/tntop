@@ -12,6 +12,7 @@ use std::{
 use compote::{Compote, Env, Serialized, Toml};
 use getset::{CopyGetters, Getters};
 pub use graph::GraphSymbol;
+pub use preset::DisabledPresets;
 use serde::{Deserialize, Serialize};
 pub use server::Server;
 
@@ -64,6 +65,8 @@ pub struct Settings {
   mem_below_net: bool,
   presets: String,
   #[get_copy = "pub"]
+  disable_presets: DisabledPresets,
+  #[get_copy = "pub"]
   graph_symbol: GraphSymbol,
   #[get_copy = "pub"]
   graph_symbol_cpu: GraphSymbol,
@@ -89,7 +92,11 @@ impl Settings {
     }
     values[key] = value;
     let candidate: Self = serde_json::from_value(values).map_err(|error| Error::Invalid(error.to_string()))?;
-    let candidate: Self = Compote::from(Serialized::defaults(candidate))
+    candidate.with_overrides()
+  }
+
+  fn with_overrides(self) -> Result<Self, Error> {
+    let candidate: Self = Compote::from(Serialized::defaults(self))
       .merge(Env::prefixed("TNTOP_").split("__").ignore(env::COMPOTE_IGNORE))
       .extract()?;
     candidate.validate()?;
@@ -137,6 +144,7 @@ impl Default for Settings {
       apps_left: false,
       mem_below_net: false,
       presets: "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:default cpu:0:block,net:0:tty".into(),
+      disable_presets: DisabledPresets::Off,
       graph_symbol: GraphSymbol::Braille,
       graph_symbol_cpu: GraphSymbol::Default,
       graph_symbol_mem: GraphSymbol::Default,

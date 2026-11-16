@@ -1,6 +1,53 @@
 use super::{Error, GraphSymbol, Settings};
 
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisabledPresets {
+  #[default]
+  Off,
+  Default,
+  Custom,
+  All,
+}
+
+impl DisabledPresets {
+  pub fn permits(self, index: usize) -> bool {
+    match self {
+      Self::Off => true,
+      Self::Default => index != 0,
+      Self::Custom => index == 0,
+      Self::All => false,
+    }
+  }
+}
+
 impl Settings {
+  pub fn with_preset(&self, index: usize) -> Result<Self, Error> {
+    let candidate = self
+      .presets()?
+      .into_iter()
+      .nth(index)
+      .ok_or_else(|| Error::Invalid(format!("preset {index} does not exist")))?;
+    if !self.disable_presets.permits(index) {
+      return Err(Error::Invalid(format!("preset {index} is disabled")));
+    }
+    candidate.with_overrides()
+  }
+
+  pub fn same_layout(&self, other: &Self) -> bool {
+    self.show_cpu == other.show_cpu
+      && self.show_mem == other.show_mem
+      && self.show_net == other.show_net
+      && self.show_apps == other.show_apps
+      && self.cpu_bottom == other.cpu_bottom
+      && self.apps_left == other.apps_left
+      && self.mem_below_net == other.mem_below_net
+      && self.graph_symbol_cpu == other.graph_symbol_cpu
+      && self.graph_symbol_mem == other.graph_symbol_mem
+      && self.graph_symbol_net == other.graph_symbol_net
+      && self.graph_symbol_apps == other.graph_symbol_apps
+  }
+
   pub fn presets(&self) -> Result<Vec<Self>, Error> {
     let definitions: Vec<_> = self.presets.split_whitespace().collect();
     if definitions.len() > 9 {

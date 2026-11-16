@@ -24,11 +24,20 @@ pub struct App {
   /// Open the configured server with this name
   #[arg(long)]
   server: Option<String>,
+  /// Start with a configured preset number
+  #[arg(long)]
+  preset: Option<usize>,
 }
 
 impl App {
   pub async fn call(&self, context: Context) -> Result<()> {
-    crate::ui::run(context.settings(), context.config_path(), self.server.as_deref()).await?;
+    crate::ui::run(
+      context.settings(),
+      context.config_path(),
+      self.server.as_deref(),
+      self.preset,
+    )
+    .await?;
     Ok(())
   }
 }

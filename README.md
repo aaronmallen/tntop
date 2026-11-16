@@ -119,6 +119,12 @@ presets = "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:defaul
 Edit definitions in General Options or the config file. Invalid definitions
 leave the live settings intact. An empty string leaves only preset 0.
 
+Press **p/P** or click the header arrows to cycle forward/back. The header shows
+the active preset, or **manual** after a layout change. `tntop --preset 2` selects
+a preset at startup. **Disable presets** in General accepts `off`, `default`
+(preset 0), `custom` (presets 1–9) or `all`. Cycling skips disabled choices;
+startup selection reports an error for a disabled or missing preset.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

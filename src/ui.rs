@@ -7,6 +7,7 @@ mod manager;
 mod menu;
 mod mouse;
 mod options;
+mod preset;
 mod theme;
 mod update;
 mod view;
@@ -66,6 +67,7 @@ struct Ui {
   options: options::Options,
   hits: Vec<(ratatui::layout::Rect, mouse::Action)>,
   picker: bool,
+  preset: Option<usize>,
   pool: usize,
   selected: usize,
   sessions: Vec<Option<Session>>,
@@ -82,8 +84,20 @@ impl Drop for Ui {
   }
 }
 
-pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) -> Result<(), Error> {
+pub async fn run(
+  settings: &Settings,
+  config_path: &Path,
+  server: Option<&str>,
+  preset: Option<usize>,
+) -> Result<(), Error> {
   let mut settings = settings.clone();
+  if let Some(index) = preset {
+    settings = settings.with_preset(index)?;
+  }
+  let presets = settings.presets()?;
+  let preset = preset
+    .filter(|index| presets.get(*index).is_some_and(|preset| preset.same_layout(&settings)))
+    .or_else(|| presets.iter().position(|preset| preset.same_layout(&settings)));
   let selected = select(&settings, server)?;
   if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
     return Err(Error::NoTerminal);
@@ -100,6 +114,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     options: Default::default(),
     hits: Vec::new(),
     picker: selected.is_none(),
+    preset,
     pool: 0,
     selected: selected.unwrap_or(0),
     sessions: (0..settings.servers().len()).map(|_| None).collect(),
@@ -138,6 +153,10 @@ fn apply_preferences(
 ) -> Result<(), Error> {
   candidate.validate()?;
   let theme = load_theme(&candidate, config_path)?;
+  let presets = candidate.presets()?;
+  ui.preset = ui
+    .preset
+    .filter(|index| presets.get(*index).is_some_and(|preset| preset.same_layout(&candidate)));
   *candidate.servers_mut() = settings.servers().clone();
   *settings = candidate;
   ui.theme = theme;
@@ -254,6 +273,9 @@ async fn run_terminal(
         continue;
       }
       if !ui.picker && layout::handle(ui, settings, config_path, key.code) {
+        continue;
+      }
+      if !ui.picker && preset::handle(ui, settings, config_path, key.code) {
         continue;
       }
       match key.code {

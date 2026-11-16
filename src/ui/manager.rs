@@ -283,6 +283,7 @@ mod tests {
       options: Default::default(),
       hits: Vec::new(),
       picker: true,
+      preset: None,
       pool: 0,
       selected: 0,
       sessions: vec![],

@@ -59,7 +59,24 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .unwrap_or_default();
   let [header, body, footer] =
     Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(2)]).areas(frame.area());
-  let [heading, clock] = Layout::horizontal([Constraint::Min(1), Constraint::Length(13)]).areas(header);
+  let [heading, presets, clock] =
+    Layout::horizontal([Constraint::Min(1), Constraint::Length(26), Constraint::Length(13)]).areas(header);
+  let label = ui
+    .preset
+    .map_or_else(|| "manual".into(), |index| format!("preset {index}"));
+  let hints = super::mouse::hints(
+    &mut ui.hits,
+    presets,
+    &[
+      ("P ‹", ratatui::crossterm::event::KeyCode::Char('P')),
+      (&label, ratatui::crossterm::event::KeyCode::Char('p')),
+      ("› p", ratatui::crossterm::event::KeyCode::Char('p')),
+    ],
+  );
+  frame.render_widget(
+    Paragraph::new(hints).style(theme.style().fg(theme.color("hi_fg"))),
+    presets,
+  );
   frame.render_widget(
     Paragraph::new(Line::from(vec![
       Span::styled(
@@ -441,6 +458,7 @@ mod tests {
       options: Default::default(),
       hits: Vec::new(),
       picker: false,
+      preset: None,
       pool: 0,
       selected: 0,
       sessions: vec![None],

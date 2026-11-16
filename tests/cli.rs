@@ -26,6 +26,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn it_validates_startup_presets_before_opening_the_terminal() {
+      let directory = tempfile::tempdir().unwrap();
+      let output = run(directory.path(), &["--preset", "3"]);
+      assert_eq!(output.status.code(), Some(2));
+      assert!(String::from_utf8_lossy(&output.stderr).contains("requires an interactive terminal"));
+      let output = run(directory.path(), &["--preset", "9"]);
+      assert_eq!(output.status.code(), Some(78));
+      assert!(String::from_utf8_lossy(&output.stderr).contains("preset 9 does not exist"));
+      std::fs::write(directory.path().join("config.toml"), "disable_presets = 'custom'\n").unwrap();
+      let output = run(directory.path(), &["--preset", "1"]);
+      assert_eq!(output.status.code(), Some(78));
+      assert!(String::from_utf8_lossy(&output.stderr).contains("preset 1 is disabled"));
+    }
+
+    #[test]
     fn it_rejects_invalid_config_before_starting_the_ui() {
       let directory = tempfile::tempdir().unwrap();
       std::fs::write(directory.path().join("config.toml"), "update_ms = 0\n").unwrap();
