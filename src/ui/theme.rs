@@ -100,6 +100,7 @@ impl Default for Theme {
   fn default() -> Self {
     let mut colors = HashMap::new();
     for (key, rgb) in [
+      ("main_bg", (0, 0, 0)),
       ("main_fg", (204, 204, 204)),
       ("title", (238, 238, 238)),
       ("hi_fg", (181, 64, 64)),
@@ -123,7 +124,6 @@ impl Default for Theme {
     ] {
       colors.insert(key.to_owned(), Color::Rgb(rgb.0, rgb.1, rgb.2));
     }
-    colors.insert("main_bg".into(), Color::Reset);
     for (name, stops) in [
       ("cpu", [(119, 202, 155), (203, 192, 108), (220, 76, 76)]),
       ("temp", [(72, 151, 212), (84, 116, 232), (255, 64, 182)]),
