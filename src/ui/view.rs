@@ -497,6 +497,10 @@ mod tests {
       background: None,
       app_row: 0,
       app_selected: None,
+      app_details: true,
+      app_follow: None,
+      app_paused: None,
+      app_page: 1,
       dialog: None,
       discovery: None,
       filter: String::new(),
@@ -563,6 +567,143 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[tokio::test]
+    async fn it_places_clickable_hotkeys_on_panel_borders_and_keeps_navigation_when_hidden() {
+      use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+      use crate::ui::mouse::{self, Action};
+      let mut settings = settings();
+      let mut ui = ui();
+      let (_, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      for (width, height) in [(160, 60), (70, 24)] {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+          .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+          .unwrap();
+        let panels = crate::ui::layout::areas(Rect::new(0, 1, width, height - 2), &settings);
+        let controls: Vec<_> = ui
+          .hits
+          .iter()
+          .filter_map(|(area, action)| {
+            if let Action::Key(key) = action {
+              Some((*area, *key))
+            } else {
+              None
+            }
+          })
+          .collect();
+        for (area, key) in &controls {
+          assert!(
+            area.y == 0
+              || panels.iter().any(|panel| {
+                area.x > panel.x && area.right() < panel.right() && (area.y == panel.y || area.y == panel.bottom() - 1)
+              })
+          );
+          assert_eq!(
+            mouse::key(
+              &mut ui,
+              MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: area.x,
+                row: area.y,
+                modifiers: KeyModifiers::NONE,
+              },
+              false
+            )
+            .unwrap()
+            .code,
+            *key
+          );
+        }
+        for key in ['m', 's', '1', '2', '3', '4'] {
+          let (area, _) = controls.iter().find(|(_, code)| *code == KeyCode::Char(key)).unwrap();
+          let hotkey = &terminal.backend().buffer()[(area.x + 1, area.y)];
+          assert_eq!(hotkey.symbol(), key.to_string());
+          assert_eq!(hotkey.fg, ui.theme.color("hi_fg"));
+          assert!(hotkey.modifier.contains(Modifier::BOLD));
+          assert_eq!(
+            terminal.backend().buffer()[(area.x + 2, area.y)].fg,
+            ui.theme.color("title")
+          );
+        }
+        for (index, (area, _)) in controls.iter().enumerate() {
+          assert!(
+            controls[index + 1..]
+              .iter()
+              .all(|(other, _)| area.intersection(*other).is_empty())
+          );
+        }
+        if width == 160 {
+          for key in [
+            KeyCode::Char('/'),
+            KeyCode::Char('z'),
+            KeyCode::Char('['),
+            KeyCode::Char(']'),
+            KeyCode::Enter,
+            KeyCode::Char(' '),
+          ] {
+            assert!(controls.iter().any(|(_, code)| *code == key), "{key:?}");
+          }
+        }
+      }
+      for key in ["show_cpu", "show_mem", "show_net", "show_apps"] {
+        settings = settings.with_preference(key, serde_json::json!(false)).unwrap();
+      }
+      let mut terminal = Terminal::new(TestBackend::new(70, 24)).unwrap();
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      assert!(
+        ui.hits
+          .iter()
+          .any(|(_, action)| matches!(action, Action::Key(KeyCode::Char('m'))))
+      );
+      assert!(text(&terminal).contains("No panels selected"));
+    }
+
+    #[tokio::test]
+    async fn it_keeps_other_panels_live_while_the_app_presentation_is_paused() {
+      let mut settings = settings();
+      let mut ui = ui();
+      let (sender, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      crate::ui::apps::handle(
+        &mut ui,
+        &mut settings,
+        std::path::Path::new("config.toml"),
+        ratatui::crossterm::event::KeyCode::Char(' '),
+      );
+      sender.send_replace(crate::client::State::default());
+      let mut terminal = Terminal::new(TestBackend::new(160, 60)).unwrap();
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      let output = text(&terminal);
+      assert!(output.contains("PAUSED"));
+      assert!(output.contains("forgejo"));
+      assert!(output.contains("Connecting to TrueNAS"));
+      assert!(output.contains("Network unavailable"));
+      crate::ui::apps::handle(
+        &mut ui,
+        &mut settings,
+        std::path::Path::new("config.toml"),
+        ratatui::crossterm::event::KeyCode::Char(' '),
+      );
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      assert!(!text(&terminal).contains("forgejo"));
+    }
 
     #[tokio::test]
     async fn it_freezes_only_menu_backgrounds_and_resumes_with_current_data() {

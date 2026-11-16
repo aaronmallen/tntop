@@ -64,6 +64,10 @@ struct Ui {
   background: Option<ratatui::buffer::Buffer>,
   app_row: usize,
   app_selected: Option<String>,
+  app_details: bool,
+  app_follow: Option<String>,
+  app_paused: Option<client::State>,
+  app_page: usize,
   dialog: Option<manager::Dialog>,
   discovery: Option<tokio::task::JoinHandle<Result<String, client::Error>>>,
   filter: String,
@@ -112,6 +116,10 @@ pub async fn run(
     background: None,
     app_row: 0,
     app_selected: None,
+    app_details: false,
+    app_follow: None,
+    app_paused: None,
+    app_page: 1,
     dialog: None,
     discovery: None,
     filter: String::new(),
@@ -353,14 +361,6 @@ async fn run_terminal(
           });
         }
         KeyCode::Char('t') if ui.picker && !settings.servers().is_empty() => manager::discover(ui, settings),
-        KeyCode::Down => {
-          ui.app_selected = None;
-          ui.app_row = ui.app_row.saturating_add(1);
-        }
-        KeyCode::Up => {
-          ui.app_selected = None;
-          ui.app_row = ui.app_row.saturating_sub(1);
-        }
         KeyCode::Char('/') if !ui.picker => ui.filtering = true,
         KeyCode::Char(']') if !ui.picker => storage::cycle(ui, settings, false),
         KeyCode::Char('[') if !ui.picker => storage::cycle(ui, settings, true),

@@ -55,6 +55,12 @@ pub(crate) fn without_app_stats() -> State {
   state
 }
 
+pub(crate) fn without_apps() -> State {
+  let mut state = state();
+  state.apps = Some(Vec::new());
+  state
+}
+
 pub(crate) fn with_metrics(metrics: Metrics) -> State {
   let mut state = state();
   state.history.clear();

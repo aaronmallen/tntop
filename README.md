@@ -222,6 +222,16 @@ share of host CPU; **CORE%** multiplies it by the current logical core
 count and may exceed 100. Graphs always show host capacity. Missing
 stats or core counts remain **N/A**.
 
+**Enter** opens/closes app details. **f** pins details to the selected app
+by name, even while you browse or filter the list. A missing app shows
+unavailable; another **f** unpins it. Details use the existing version,
+state, update, CPU, memory, network and disk-total readings.
+
+**Space** freezes only app presentation. Collection and the other panels
+continue; press it again to show current data. Switching servers clears
+pause and follow. Use **Page Up/Down**, **Home/End** to navigate, and
+**Delete** outside text editing to clear the app filter.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

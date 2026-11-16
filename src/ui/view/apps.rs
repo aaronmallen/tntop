@@ -4,19 +4,81 @@ use super::*;
 use crate::client::State;
 
 pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, settings: &Settings) {
+  let state = ui.app_paused.as_ref().unwrap_or(state);
   let theme = &ui.theme;
   let symbol = graph_symbol(settings, theme, settings.graph_symbol_apps());
   let bytes = |value| super::bytes(value, settings.base_10_sizes());
-  let title = format!(
-    " apps / {}{} {}{} ",
-    settings.apps_sort(),
-    if settings.apps_reversed() { " reversed" } else { "" },
-    ui.filter,
-    if ui.filtering { "▏" } else { "" }
-  );
+  let title = format!(" 4 apps{} ", if ui.app_paused.is_some() { " PAUSED" } else { "" },);
   let block = panel(&title, "proc_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);
+  let title_width = Line::from(title).width() as u16 + 1;
+  super::super::mouse::controls(
+    frame,
+    &mut ui.hits,
+    Rect::new(
+      area.x.saturating_add(title_width),
+      area.y,
+      area.width.saturating_sub(title_width + 1),
+      u16::from(area.height > 1),
+    ),
+    theme,
+    &[
+      ("", "←", "", KeyCode::Left),
+      ("", "→", settings.apps_sort(), KeyCode::Right),
+      (
+        "",
+        "/",
+        &format!(
+          " {}{}",
+          if ui.filter.is_empty() { "filter" } else { &ui.filter },
+          if ui.filtering { "▏" } else { "" }
+        ),
+        KeyCode::Char('/'),
+      ),
+      (
+        "",
+        "r",
+        if settings.apps_reversed() {
+          "everse on"
+        } else {
+          "everse"
+        },
+        KeyCode::Char('r'),
+      ),
+    ],
+  );
+  super::super::mouse::controls(
+    frame,
+    &mut ui.hits,
+    Rect::new(
+      inner.x,
+      area.bottom().saturating_sub(1),
+      inner.width,
+      u16::from(area.height > 1),
+    ),
+    theme,
+    &[
+      (
+        "",
+        "enter",
+        if inner.width >= 40 { " details" } else { "" },
+        KeyCode::Enter,
+      ),
+      (
+        "",
+        "f",
+        if ui.app_follow.is_some() { "ollow on" } else { "ollow" },
+        KeyCode::Char('f'),
+      ),
+      (
+        "",
+        "space",
+        if ui.app_paused.is_some() { " resume" } else { " pause" },
+        KeyCode::Char(' '),
+      ),
+    ],
+  );
   let Some(all_apps) = state.apps() else {
     frame.render_widget(
       Paragraph::new(state.apps_error().as_deref().unwrap_or("Waiting for installed apps…")).wrap(Wrap {
@@ -26,8 +88,13 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     );
     return;
   };
-  let [table_area, detail, status] =
-    Layout::vertical([Constraint::Min(1), Constraint::Length(3), Constraint::Length(1)]).areas(inner);
+  let [table_area, detail, status] = Layout::vertical([
+    Constraint::Min(1),
+    Constraint::Length(if ui.app_details { 5 } else { 0 }),
+    Constraint::Length(1),
+  ])
+  .areas(inner);
+  ui.app_page = table_area.height.saturating_sub(1).max(1) as usize;
   let stats = state.app_history().back();
   let apps = super::super::apps::ordered(state, &ui.filter, settings);
   if let Some(selected) = &ui.app_selected {
@@ -175,7 +242,12 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     apps.len(),
     false,
   );
-  if let Some(app) = apps.get(ui.app_row) {
+  let detail_app = if let Some(name) = &ui.app_follow {
+    all_apps.iter().find(|app| app.name() == name)
+  } else {
+    apps.get(ui.app_row).copied()
+  };
+  if let Some(app) = detail_app {
     let stats = stats.and_then(|stats| stats.get(app.name()));
     frame.render_widget(
       Paragraph::new(vec![
@@ -187,6 +259,25 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
             app.update()
           ),
           Style::default().fg(theme.color("title")),
+        ),
+        Line::from(format!(
+          " State: {}{}",
+          app.state(),
+          if ui.app_follow.is_some() { " | following" } else { "" }
+        )),
+        Line::from(
+          stats
+            .map(|stats| {
+              let cpu = super::super::apps::cpu(*stats.cpu_usage(), state, settings)
+                .map(|cpu| format!("{cpu:.1}%"))
+                .unwrap_or_else(|| "N/A".into());
+              format!(
+                " CPU {cpu} {} | Memory {}",
+                if settings.apps_per_core() { "core" } else { "host" },
+                bytes(*stats.memory() as f64)
+              )
+            })
+            .unwrap_or_else(|| " CPU N/A | Memory N/A".into()),
         ),
         Line::from(
           stats
@@ -207,6 +298,8 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       ]),
       detail,
     );
+  } else if let Some(name) = &ui.app_follow {
+    frame.render_widget(Paragraph::new(format!("Following {name}: app unavailable")), detail);
   }
   let text = state
     .apps_error()
@@ -235,12 +328,75 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
 mod tests {
   use serde_json::json;
 
+  #[test]
+  fn it_keeps_followed_details_outside_filters_and_reports_disappearance() {
+    let state = crate::client::fixtures::state();
+    let mut ui = Ui::default();
+    ui.app_details = true;
+    ui.app_follow = Some("postgres".into());
+    ui.filter = "forgejo".into();
+    let settings = Settings::default();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 25)).unwrap();
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+      .unwrap();
+    let text: String = terminal
+      .backend()
+      .buffer()
+      .content
+      .iter()
+      .map(|cell| cell.symbol())
+      .collect();
+    for expected in [
+      "postgres  18.0",
+      "State: RUNNING",
+      "following",
+      "CPU",
+      "Memory",
+      "Disk totals",
+    ] {
+      assert!(text.contains(expected));
+    }
+    terminal
+      .draw(|frame| {
+        draw(
+          frame,
+          frame.area(),
+          &crate::client::fixtures::without_apps(),
+          &mut ui,
+          &settings,
+        )
+      })
+      .unwrap();
+    let text: String = terminal
+      .backend()
+      .buffer()
+      .content
+      .iter()
+      .map(|cell| cell.symbol())
+      .collect();
+    assert!(text.contains("Following postgres: app unavailable"));
+    ui.app_details = false;
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+      .unwrap();
+    let text: String = terminal
+      .backend()
+      .buffer()
+      .content
+      .iter()
+      .map(|cell| cell.symbol())
+      .collect();
+    assert!(!text.contains("Disk totals"));
+  }
+
   use super::*;
 
   #[test]
   fn it_keeps_identity_through_sort_and_filter_and_renders_the_selected_units() {
     let state = crate::client::fixtures::state();
     let mut ui = Ui::default();
+    ui.app_details = true;
     ui.app_selected = Some("postgres".into());
     let mut settings = Settings::default();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 25)).unwrap();

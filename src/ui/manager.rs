@@ -260,6 +260,8 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
   }
   ui.app_row = 0;
   ui.app_selected = None;
+  ui.app_follow = None;
+  ui.app_paused = None;
   ui.pool = None;
   ui.filter.clear();
   ui.message = None;
@@ -278,6 +280,10 @@ mod tests {
       background: None,
       app_row: 0,
       app_selected: None,
+      app_details: false,
+      app_follow: None,
+      app_paused: None,
+      app_page: 1,
       dialog: None,
       discovery: None,
       filter: String::new(),
