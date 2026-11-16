@@ -31,12 +31,18 @@ pub struct Client {
 
 impl Client {
   pub async fn connect(server: &Server, key: &str) -> Result<Self, Error> {
+    server.validate().map_err(|error| Error::Protocol(error.to_string()))?;
+    let secure = server.url().scheme() == "https";
     let mut url = server.url().clone();
     url
-      .set_scheme("wss")
+      .set_scheme(if secure { "wss" } else { "ws" })
       .map_err(|_| Error::Protocol("invalid server URL".into()))?;
     url.set_path(&format!("/api/{}", server.api_version().as_str()));
-    let connector = tls::connector(server.ca_cert().as_deref(), server.certificate_sha256().as_deref())?;
+    let connector = if secure {
+      tls::connector(server.ca_cert().as_deref(), server.certificate_sha256().as_deref())?
+    } else {
+      None
+    };
     let (socket, _) = timeout(
       Duration::from_secs(15),
       tokio_tungstenite::connect_async_tls_with_config(url.as_str(), None, false, connector),
@@ -483,6 +489,33 @@ mod tests {
     }
     mod connect {
       use super::*;
+
+      #[tokio::test]
+      async fn it_authenticates_over_http_without_reading_certificates() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+          let (stream, _) = listener.accept().await.unwrap();
+          let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+          let request: Value = serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+          assert_eq!(request["method"], "auth.login_with_api_key");
+          assert_eq!(request["params"], json!(["test-api-key"]));
+          socket
+            .send(Message::Text(
+              json!({"jsonrpc":"2.0","id":request["id"],"result":true})
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        });
+        let server = Server::new("test".into(), format!("http://{address}").parse().unwrap())
+          .unwrap()
+          .with_ca_cert("/nonexistent/tntop-test-ca.pem".into());
+        let client = Client::connect(&server, "test-api-key").await.unwrap();
+        assert!(matches!(client.socket.get_ref(), MaybeTlsStream::Plain(_)));
+        peer.await.unwrap();
+      }
 
       #[tokio::test]
       async fn it_initializes_tls_and_reports_a_failed_handshake() {

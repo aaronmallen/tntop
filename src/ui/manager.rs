@@ -25,6 +25,10 @@ pub(super) enum Dialog {
 
 pub(super) fn discover(ui: &mut Ui, settings: &Settings) {
   let server = settings.servers()[ui.selected].clone();
+  if server.url().scheme() != "https" {
+    ui.message = Some("HTTP connections do not use certificates.".into());
+    return;
+  }
   ui.message = None;
   ui.picker = true;
   ui.discovery = Some(tokio::spawn(async move { client::tls::discover(&server).await }));
@@ -42,14 +46,14 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
         "Tab / ↑↓ switch fields. Enter saves. Esc cancels.".into(),
         String::new(),
         format!("{} Name: {}", if *field == 0 { "›" } else { " " }, values[0]),
-        format!("{} HTTPS URL: {}", if *field == 1 { "›" } else { " " }, values[1]),
+        format!("{} HTTP(S) URL: {}", if *field == 1 { "›" } else { " " }, values[1]),
         format!(
           "{} CA PEM path (optional): {}",
           if *field == 2 { "›" } else { " " },
           values[2]
         ),
         String::new(),
-        "Leave CA path empty to trust a certificate fingerprint.".into(),
+        "For HTTPS, leave CA path empty to trust a certificate fingerprint.".into(),
       ],
     ),
     Some(Dialog::Delete) => (
@@ -148,7 +152,7 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
           values[1]
             .trim()
             .parse()
-            .map_err(|_| config::Error::Invalid("enter an HTTPS server URL".into()))?,
+            .map_err(|_| config::Error::Invalid("enter an HTTP or HTTPS server URL".into()))?,
         )?;
         if settings
           .servers()
@@ -233,7 +237,7 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
       });
       return Ok(());
     };
-    if server.ca_cert().is_none() && server.certificate_sha256().is_none() {
+    if server.url().scheme() == "https" && server.ca_cert().is_none() && server.certificate_sha256().is_none() {
       discover(ui, settings);
       return Ok(());
     }
@@ -273,6 +277,22 @@ mod tests {
       sessions: vec![],
       sort: 0,
       theme: Default::default(),
+    }
+  }
+
+  mod discover {
+    use super::*;
+
+    #[test]
+    fn it_skips_certificate_discovery_for_http() {
+      let mut settings = Settings::default();
+      settings
+        .servers_mut()
+        .push(Server::new("home".into(), "http://nas.local".parse().unwrap()).unwrap());
+      let mut ui = ui();
+      discover(&mut ui, &settings);
+      assert!(ui.discovery.is_none());
+      assert!(ui.dialog.is_none());
     }
   }
 
@@ -378,7 +398,7 @@ mod tests {
       let mut ui = ui();
       ui.dialog = Some(Dialog::Add {
         field: 0,
-        values: ["home".into(), "http://nas.local".into(), String::new()],
+        values: ["home".into(), "ftp://nas.local".into(), String::new()],
       });
       assert!(
         super::super::handle(&mut ui, &mut settings, &path, KeyCode::Enter)

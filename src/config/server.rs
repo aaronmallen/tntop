@@ -56,7 +56,7 @@ impl Server {
         "server name must be nonempty and contain no control characters".into(),
       ));
     }
-    if self.url.scheme() != "https"
+    if !matches!(self.url.scheme(), "http" | "https")
       || self.url.host_str().is_none()
       || !self.url.username().is_empty()
       || self.url.password().is_some()
@@ -65,7 +65,7 @@ impl Server {
       || self.url.path() != "/"
     {
       return Err(Error::Invalid(format!(
-        "{}: use an HTTPS server origin, such as https://nas.example.com",
+        "{}: use an HTTP or HTTPS server origin, such as https://nas.example.com",
         self.name
       )));
     }
@@ -95,9 +95,12 @@ mod tests {
       use super::*;
 
       #[test]
-      fn it_rejects_cleartext_embedded_secrets_and_paths() {
+      fn it_rejects_unsupported_schemes_embedded_secrets_and_paths() {
         for url in [
-          "http://nas.local",
+          "ftp://nas.local",
+          "http://user:secret@nas.local",
+          "http://nas.local/path",
+          "http://nas.local/?key=secret",
           "https://user:secret@nas.local",
           "https://nas.local/path",
           "https://nas.local/?key=secret",
@@ -106,6 +109,7 @@ mod tests {
         }
         assert!(Server::new("nas\n".into(), "https://nas.local".parse().unwrap()).is_err());
         assert!(Server::new("nas".into(), "https://nas.local:8443".parse().unwrap()).is_ok());
+        assert!(Server::new("nas".into(), "http://nas.local:8080".parse().unwrap()).is_ok());
       }
     }
   }

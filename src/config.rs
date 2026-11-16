@@ -208,6 +208,17 @@ mod tests {
   use super::*;
 
   mod add_server {
+    #[test]
+    fn it_saves_and_reloads_http_servers() {
+      let directory = tempfile::tempdir().unwrap();
+      let path = directory.path().join("config.toml");
+      let server = super::Server::new("nas".into(), "http://nas.local:8080".parse().unwrap()).unwrap();
+      super::add_server(&path, &server).unwrap();
+      let saved = super::load(&path).unwrap();
+      assert_eq!(saved.servers()[0].url(), server.url());
+      assert!(saved.servers()[0].certificate_sha256().is_none());
+    }
+
     use pretty_assertions::assert_eq;
 
     use super::*;
