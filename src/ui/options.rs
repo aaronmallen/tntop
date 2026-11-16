@@ -24,6 +24,23 @@ struct OptionRow {
   description: &'static str,
 }
 
+impl Options {
+  pub fn select_row(&mut self, row: usize) -> bool {
+    if self.editing.is_some() {
+      return false;
+    }
+    self.row = row.min(rows(self.category).len().saturating_sub(1));
+    true
+  }
+
+  pub fn select_category(&mut self, category: usize) {
+    if self.editing.is_none() {
+      self.category = category.min(4);
+      self.row = 0;
+    }
+  }
+}
+
 fn rows(category: usize) -> Vec<OptionRow> {
   match category {
     0 => vec![
@@ -36,6 +53,11 @@ fn rows(category: usize) -> Vec<OptionRow> {
         key: "theme",
         label: "Theme path",
         description: "A btop theme file. Relative paths use the config directory. Empty uses Default.",
+      },
+      OptionRow {
+        key: "disable_mouse",
+        label: "Disable mouse",
+        description: "Use keyboard controls only. Release mouse capture so the terminal can select text.",
       },
       OptionRow {
         key: "update_ms",
@@ -145,7 +167,7 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
   true
 }
 
-pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
+pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   let height = if frame.area().height >= 18 {
     frame.area().height.saturating_sub(10).min(32)
   } else {
@@ -160,6 +182,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
   if inner.width == 0 || inner.height == 0 {
     return;
   }
+  ui.hits.push((inner, super::mouse::Action::Scroll));
   let categories = if inner.width >= 60 {
     ["General", "CPU", "Memory/ZFS", "Network", "Apps"]
   } else {
@@ -182,6 +205,8 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       Paragraph::new(label).centered().style(style),
       Rect::new(x, inner.y, width, 1),
     );
+    ui.hits
+      .push((Rect::new(x, inner.y, width, 1), super::mouse::Action::Category(index)));
   }
   let rows = rows(ui.options.category);
   let values = match settings.preferences() {
@@ -235,6 +260,8 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       Paragraph::new(lines).centered().style(style),
       Rect::new(left.x, y, left.width, 2),
     );
+    ui.hits
+      .push((Rect::new(left.x, y, left.width, 2), super::mouse::Action::Option(index)));
     if selected && let Some(input) = &ui.options.editing {
       let edit = Rect::new(left.x, y + 1, left.width, 1);
       frame.render_widget(Paragraph::new(" ".repeat(edit.width as usize)).style(style), edit);
@@ -273,10 +300,12 @@ mod tests {
   #[test]
   fn it_keeps_values_below_names_and_descriptions_on_the_right() {
     use ratatui::{Terminal, backend::TestBackend};
-    let ui = Ui::default();
+    let mut ui = Ui::default();
     for (width, height) in [(1, 1), (20, 4), (48, 16), (80, 24), (160, 60)] {
       let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-      terminal.draw(|frame| draw(frame, &ui, &Settings::default())).unwrap();
+      terminal
+        .draw(|frame| draw(frame, &mut ui, &Settings::default()))
+        .unwrap();
       if width < 80 {
         continue;
       }

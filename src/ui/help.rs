@@ -28,7 +28,7 @@ fn lines() -> Vec<&'static str> {
     "  Enter / Space     Toggle a boolean or edit a value",
     "  Enter / Esc       Accept / cancel an edit",
     "",
-    "Text fields",
+    "Server and Options text fields",
     "  Left / Right      Move the cursor",
     "  Home / End        Start / end of the field",
     "  Backspace/Delete  Remove before / after the cursor",
@@ -56,6 +56,11 @@ fn lines() -> Vec<&'static str> {
     "  Home / End        First / last line",
     "  Esc               Return to Main",
     "",
+    "Mouse",
+    "  Click menu entries, settings, categories and footer controls.",
+    "  Click a server to open it, or an app row to select it.",
+    "  Scroll over lists and Help. Disable mouse in General options.",
+    "",
     "HTTP sends API keys and server data without encryption.",
     "Disk I/O is aggregate. Network totals are session estimates.",
   ]
@@ -74,7 +79,7 @@ pub(super) fn handle(offset: &mut usize, key: KeyCode) -> bool {
   true
 }
 
-pub(super) fn draw(frame: &mut Frame, offset: &mut usize, theme: &Theme) {
+pub(super) fn draw(frame: &mut Frame, offset: &mut usize, theme: &Theme) -> Rect {
   let bounds = frame.area();
   let width = bounds.width.min(90);
   let height = bounds.height.min(30);
@@ -94,6 +99,7 @@ pub(super) fn draw(frame: &mut Frame, offset: &mut usize, theme: &Theme) {
       .scroll((*offset as u16, 0)),
     area,
   );
+  area
 }
 
 #[cfg(test)]
@@ -111,7 +117,9 @@ mod tests {
     for (width, height) in [(70, 24), (20, 5), (100, 40)] {
       let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
       terminal
-        .draw(|frame| draw(frame, &mut offset, &Theme::default()))
+        .draw(|frame| {
+          draw(frame, &mut offset, &Theme::default());
+        })
         .unwrap();
       assert!(offset < lines().len());
     }

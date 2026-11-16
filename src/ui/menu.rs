@@ -2,7 +2,6 @@ use ratatui::{
   Frame,
   crossterm::event::KeyCode,
   layout::Rect,
-  style::Style,
   text::{Line, Text},
   widgets::{Clear, Paragraph},
 };
@@ -72,15 +71,21 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
 
 pub(super) fn draw(frame: &mut Frame, ui: &mut Ui) {
   if let Some(Menu::Help(offset)) = &mut ui.menu {
-    super::help::draw(frame, offset, &ui.theme);
+    let area = super::help::draw(frame, offset, &ui.theme);
+    ui.hits.push((area, super::mouse::Action::Scroll));
     return;
   }
   let Some(menu) = &ui.menu else { return };
   if let Menu::Main(selected) = menu {
     let rows = ["Options", "Help", "Servers", "Update", "Quit"];
     let large = frame.area().width >= 44 && frame.area().height >= 24;
-    let stride = if large { if frame.area().height >= 28 { 4 } else { 3 } } else { 1 };
+    let stride = if large {
+      if frame.area().height >= 28 { 4 } else { 3 }
+    } else {
+      1
+    };
     let area = overlay(frame, rows.len() as u16 * stride, 44, &ui.theme);
+    ui.hits.push((area, super::mouse::Action::Scroll));
     let visible = (area.height / stride).max(1) as usize;
     let start = selected.saturating_sub(visible.saturating_sub(1));
     for (index, label) in rows.iter().enumerate().skip(start).take(visible) {
@@ -96,6 +101,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui) {
         .fg(ui.theme.color(if index == *selected { "hi_fg" } else { "main_fg" }));
       let text = if large { lettering(label) } else { Text::from(*label) };
       frame.render_widget(Paragraph::new(text).centered().style(style), row);
+      ui.hits.push((row, super::mouse::Action::Main(index)));
     }
     return;
   }
@@ -103,60 +109,14 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui) {
     let area = overlay(frame, 9, 74, &ui.theme);
     frame.render_widget(
       Paragraph::new(format!("{}\n\nEsc returns to Main.", ui.update.message()))
-        .wrap(ratatui::widgets::Wrap { trim: true })
+        .wrap(ratatui::widgets::Wrap {
+          trim: true,
+        })
         .style(ui.theme.style())
         .block(panel(" update ", "cpu_box", &ui.theme)),
       area,
     );
-    return;
   }
-  let (title, rows, selected) = match menu {
-    Menu::Main(row) => (
-      " main ",
-      vec!["Options", "Help", "Servers", "Update", "Quit"],
-      Some(*row),
-    ),
-    Menu::Options => (
-      " options ",
-      vec!["Options are not available yet.", "Esc returns to Main."],
-      None,
-    ),
-    Menu::Help(_) => return,
-    Menu::Update => return,
-  };
-  let bounds = frame.area();
-  let width = bounds.width.min(44);
-  let height = bounds.height.min(rows.len() as u16 + 2);
-  let area = Rect::new(
-    bounds.x + (bounds.width - width) / 2,
-    bounds.y + (bounds.height - height) / 2,
-    width,
-    height,
-  );
-  frame.render_widget(Clear, area);
-  let lines: Vec<_> = rows
-    .into_iter()
-    .enumerate()
-    .map(|(index, text)| {
-      let style = if selected == Some(index) {
-        Style::default()
-          .fg(ui.theme.color("selected_fg"))
-          .bg(ui.theme.color("selected_bg"))
-      } else {
-        ui.theme.style()
-      };
-      Line::styled(
-        format!(" {} {text}", if selected == Some(index) { "›" } else { " " }),
-        style,
-      )
-    })
-    .collect();
-  frame.render_widget(
-    Paragraph::new(lines)
-      .style(ui.theme.style())
-      .block(panel(title, "cpu_box", &ui.theme)),
-    area,
-  );
 }
 
 pub(super) fn overlay(frame: &mut Frame, height: u16, width: u16, theme: &super::Theme) -> Rect {
@@ -276,7 +236,7 @@ mod tests {
     ui.menu = Some(Menu::Main(0));
     for (width, height) in [(80, 32), (160, 60)] {
       let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-      terminal.draw(|frame| draw(frame, &ui)).unwrap();
+      terminal.draw(|frame| draw(frame, &mut ui)).unwrap();
       let buffer = terminal.backend().buffer();
       let lines: Vec<String> = (0..height)
         .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())

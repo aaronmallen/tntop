@@ -15,12 +15,16 @@ use super::{Ui, theme::Theme};
 use crate::config::Settings;
 
 pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
+  ui.hits.clear();
   draw_content(frame, ui, settings);
   if ui.menu.is_some() {
     let area = frame.area();
     frame
       .buffer_mut()
       .set_style(area, ui.theme.style().fg(ui.theme.color("inactive_fg")));
+  }
+  if ui.menu.is_some() || ui.dialog.is_some() || ui.discovery.is_some() {
+    ui.hits.clear();
   }
   if ui.menu == Some(super::menu::Menu::Options) {
     super::options::draw(frame, ui, settings);
@@ -105,9 +109,23 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       settings.update_ms().div_ceil(1000).max(2)
     ),
   };
+  let hints = super::mouse::hints(
+    &mut ui.hits,
+    footer,
+    &[
+      ("m menu", ratatui::crossterm::event::KeyCode::Char('m')),
+      ("s servers", ratatui::crossterm::event::KeyCode::Char('s')),
+      ("/ filter", ratatui::crossterm::event::KeyCode::Char('/')),
+      ("← sort", ratatui::crossterm::event::KeyCode::Left),
+      ("sort →", ratatui::crossterm::event::KeyCode::Right),
+      ("n net", ratatui::crossterm::event::KeyCode::Char('n')),
+      ("[ pool", ratatui::crossterm::event::KeyCode::Char('[')),
+      ("pool ]", ratatui::crossterm::event::KeyCode::Char(']')),
+    ],
+  );
   frame.render_widget(
     Paragraph::new(vec![
-      Line::from(" m/Esc menu  s servers  ↑↓ apps  / filter  ←→ sort  n interface  [] pool"),
+      hints,
       Line::styled(
         ui.message.clone().unwrap_or(status),
         Style::default().fg(ui.theme.color("graph_text")),
@@ -203,7 +221,7 @@ fn meter(frame: &mut Frame, area: Rect, label: &str, ratio: f64, value: &str, gr
   frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn picker(frame: &mut Frame, ui: &Ui, settings: &Settings) {
+fn picker(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   let [header, list, footer] =
     Layout::vertical([Constraint::Length(3), Constraint::Min(1), Constraint::Length(3)]).areas(frame.area());
   frame.render_widget(
@@ -239,16 +257,46 @@ fn picker(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       .bg(ui.theme.color("selected_bg")),
   )
   .highlight_symbol("› ");
-  frame.render_stateful_widget(table, list, &mut TableState::default().with_selected(Some(ui.selected)));
+  let mut table_state = TableState::default().with_selected(Some(ui.selected));
+  frame.render_stateful_widget(table, list, &mut table_state);
+  super::mouse::rows(
+    &mut ui.hits,
+    Rect::new(
+      list.x + 1,
+      list.y + 2,
+      list.width.saturating_sub(2),
+      list.height.saturating_sub(3),
+    ),
+    table_state.offset(),
+    settings.servers().len(),
+    true,
+  );
+  let hints = super::mouse::hints(
+    &mut ui.hits,
+    footer,
+    &[
+      ("Enter open", ratatui::crossterm::event::KeyCode::Enter),
+      ("a add", ratatui::crossterm::event::KeyCode::Char('a')),
+      ("d delete", ratatui::crossterm::event::KeyCode::Char('d')),
+      ("t trust", ratatui::crossterm::event::KeyCode::Char('t')),
+      ("e API key", ratatui::crossterm::event::KeyCode::Char('e')),
+      ("m menu", ratatui::crossterm::event::KeyCode::Char('m')),
+    ],
+  );
   frame.render_widget(
-    Paragraph::new(format!(
-      " ↑↓ select  Enter open  a add  d delete  t trust  e API key  q quit\n{}",
-      ui.message.as_deref().unwrap_or(if settings.servers().is_empty() {
-        "No servers configured. Press a to add your first server."
-      } else {
-        "API keys live in your system keyring."
-      })
-    ))
+    Paragraph::new(vec![
+      hints,
+      Line::from(
+        ui.message
+          .as_deref()
+          .unwrap_or(if settings.servers().is_empty() {
+            "No servers configured. Press a to add your first server."
+          } else {
+            "API keys live in your system keyring."
+          })
+          .to_owned(),
+      ),
+    ])
     .wrap(Wrap {
       trim: true,
     }),
@@ -299,6 +347,7 @@ mod tests {
       message: None,
       menu: None,
       options: Default::default(),
+      hits: Vec::new(),
       picker: false,
       pool: 0,
       selected: 0,

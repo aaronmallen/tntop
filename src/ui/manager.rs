@@ -281,6 +281,7 @@ mod tests {
       message: None,
       menu: None,
       options: Default::default(),
+      hits: Vec::new(),
       picker: true,
       pool: 0,
       selected: 0,

@@ -107,6 +107,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui) {
     columns.extend([Constraint::Length(13), Constraint::Length(13)]);
     headings.extend(["DOWNLOAD", "UPLOAD"]);
   }
+  let mut table_state = TableState::default().with_selected(if apps.is_empty() { None } else { Some(ui.app_row) });
   frame.render_stateful_widget(
     Table::new(rows, columns)
       .header(Row::new(headings).style(Style::default().fg(theme.color("title")).add_modifier(Modifier::BOLD)))
@@ -117,7 +118,19 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui) {
       )
       .highlight_symbol("› "),
     table_area,
-    &mut TableState::default().with_selected(if apps.is_empty() { None } else { Some(ui.app_row) }),
+    &mut table_state,
+  );
+  super::super::mouse::rows(
+    &mut ui.hits,
+    Rect::new(
+      table_area.x,
+      table_area.y + 1,
+      table_area.width,
+      table_area.height.saturating_sub(1),
+    ),
+    table_state.offset(),
+    apps.len(),
+    false,
   );
   if let Some(app) = apps.get(ui.app_row) {
     let stats = stats.and_then(|stats| stats.get(app.name()));

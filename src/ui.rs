@@ -3,6 +3,7 @@ mod help;
 mod input;
 mod manager;
 mod menu;
+mod mouse;
 mod options;
 mod theme;
 mod update;
@@ -61,6 +62,7 @@ struct Ui {
   message: Option<String>,
   menu: Option<menu::Menu>,
   options: options::Options,
+  hits: Vec<(ratatui::layout::Rect, mouse::Action)>,
   picker: bool,
   pool: usize,
   selected: usize,
@@ -94,6 +96,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
     message: None,
     menu: None,
     options: Default::default(),
+    hits: Vec::new(),
     picker: selected.is_none(),
     pool: 0,
     selected: selected.unwrap_or(0),
@@ -106,6 +109,7 @@ pub async fn run(settings: &Settings, config_path: &Path, server: Option<&str>) 
   log::set_max_level(log::LevelFilter::Off);
   let mut baseline = settings.clone();
   let result = run_terminal(&mut ui, &mut settings, config_path, &mut baseline).await;
+  let _ = ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture);
   ratatui::restore();
   log::set_max_level(level);
   result?;
@@ -155,9 +159,18 @@ async fn run_terminal(
     }
   }
   let mut redraw = Instant::now();
+  let mut mouse_enabled = false;
   loop {
     if ui.update.poll().await {
       redraw = Instant::now();
+    }
+    if mouse_enabled == settings.disable_mouse() {
+      if settings.disable_mouse() {
+        ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture)?;
+      } else {
+        ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture)?;
+      }
+      mouse_enabled = !settings.disable_mouse();
     }
     if ui.discovery.as_ref().is_some_and(|task| task.is_finished()) {
       let result = ui.discovery.take().unwrap().await;
@@ -179,7 +192,14 @@ async fn run_terminal(
     if event::poll(Duration::ZERO)? {
       let event = event::read()?;
       redraw = Instant::now();
-      let Event::Key(key) = event else { continue };
+      let key = match event {
+        Event::Key(key) => key,
+        Event::Mouse(event) => match mouse::key(ui, event, settings.disable_mouse()) {
+          Some(key) => key,
+          None => continue,
+        },
+        _ => continue,
+      };
       if key.kind == KeyEventKind::Release {
         continue;
       }

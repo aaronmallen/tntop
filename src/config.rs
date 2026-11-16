@@ -35,6 +35,8 @@ pub struct Settings {
   servers: Vec<Server>,
   #[get_copy = "pub"]
   save_on_exit: bool,
+  #[get_copy = "pub"]
+  disable_mouse: bool,
   #[get = "pub"]
   theme: Option<PathBuf>,
   #[get_copy = "pub"]
@@ -84,6 +86,7 @@ impl Default for Settings {
     Self {
       servers: Vec::new(),
       save_on_exit: true,
+      disable_mouse: false,
       theme: None,
       update_ms: 2000,
     }
