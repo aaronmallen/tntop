@@ -183,6 +183,18 @@ Used RAM remains total minus available. ARC overlaps RAM, so tntop never
 adds it to Used or Available or guesses reclaimable RAM. Turn this option
 off for RAM-only display. Missing ARC-free readings show **N/A**.
 
+## Storage
+
+**Pool filter** accepts space-separated name fragments. Prefix `exclude=`
+to hide matches; empty shows all pools. **[ / ]** cycles matching pools,
+keeping selection by name as pools change.
+
+**Show disk I/O** toggles aggregate statistics. **I/O view** replaces pool
+capacity with read/write graphs. Combine read and write or show read above
+write on a shared scale. **I/O scale (bytes/s)** sets a fixed maximum;
+zero uses retained history. Capacity belongs to each pool, but disk busy,
+read/write rates and IOPS always describe **all disks**.
+
 ## LICENSE
 
 tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].

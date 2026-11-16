@@ -35,6 +35,16 @@ pub enum Error {
 #[derive(Clone, CopyGetters, Debug, Deserialize, Getters, Serialize)]
 #[serde(default)]
 pub struct Settings {
+  #[get = "pub"]
+  disks_filter: String,
+  #[get_copy = "pub"]
+  show_io_stat: bool,
+  #[get_copy = "pub"]
+  io_mode: bool,
+  #[get_copy = "pub"]
+  io_graph_combined: bool,
+  #[get_copy = "pub"]
+  io_graph_scale: u64,
   #[get_copy = "pub"]
   mem_graphs: bool,
   #[get_copy = "pub"]
@@ -189,6 +199,11 @@ impl Settings {
 impl Default for Settings {
   fn default() -> Self {
     Self {
+      disks_filter: String::new(),
+      show_io_stat: true,
+      io_mode: false,
+      io_graph_combined: true,
+      io_graph_scale: 0,
       mem_graphs: true,
       show_disks: true,
       show_arc: true,

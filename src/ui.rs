@@ -9,6 +9,7 @@ mod menu;
 mod mouse;
 mod options;
 mod preset;
+mod storage;
 mod theme;
 mod update;
 mod view;
@@ -71,7 +72,7 @@ struct Ui {
   hits: Vec<(ratatui::layout::Rect, mouse::Action)>,
   picker: bool,
   preset: Option<usize>,
-  pool: usize,
+  pool: Option<String>,
   selected: usize,
   sessions: Vec<Option<Session>>,
   sort: usize,
@@ -119,7 +120,7 @@ pub async fn run(
     hits: Vec::new(),
     picker: selected.is_none(),
     preset,
-    pool: 0,
+    pool: None,
     selected: selected.unwrap_or(0),
     sessions: (0..settings.servers().len()).map(|_| None).collect(),
     sort: 0,
@@ -352,8 +353,8 @@ async fn run_terminal(
           ui.app_row = 0;
         }
         KeyCode::Char('n') if !ui.picker => ui.interface = ui.interface.wrapping_add(1),
-        KeyCode::Char(']') if !ui.picker => ui.pool = ui.pool.wrapping_add(1),
-        KeyCode::Char('[') if !ui.picker => ui.pool = ui.pool.saturating_sub(1),
+        KeyCode::Char(']') if !ui.picker => storage::cycle(ui, settings, false),
+        KeyCode::Char('[') if !ui.picker => storage::cycle(ui, settings, true),
         _ => {}
       }
     }

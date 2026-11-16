@@ -258,7 +258,7 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
   }
   ui.app_row = 0;
   ui.interface = 0;
-  ui.pool = 0;
+  ui.pool = None;
   ui.filter.clear();
   ui.message = None;
   ui.picker = false;
@@ -286,7 +286,7 @@ mod tests {
       hits: Vec::new(),
       picker: true,
       preset: None,
-      pool: 0,
+      pool: None,
       selected: 0,
       sessions: vec![],
       sort: 0,

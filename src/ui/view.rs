@@ -129,7 +129,7 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     cpu::draw(frame, cpu, &state, theme, settings);
   }
   if !memory.is_empty() {
-    memory::draw(frame, memory, &state, ui.pool, theme, settings);
+    memory::draw(frame, memory, &state, &mut ui.pool, theme, settings);
   }
   if !network.is_empty() {
     network::draw(frame, network, &state, ui.interface, theme, settings);
@@ -162,6 +162,23 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       &[
         ("", "-", "", KeyCode::Char('-')),
         ("", "+", &format!(" {}ms", settings.update_ms()), KeyCode::Char('+')),
+      ],
+    );
+  }
+  if settings.show_disks() && memory.width > 4 && memory.height > 1 {
+    super::mouse::controls(
+      frame,
+      &mut ui.hits,
+      Rect::new(
+        memory.x + memory.width / 2 + 1,
+        memory.bottom() - 1,
+        memory.width / 2 - 2,
+        1,
+      ),
+      &ui.theme,
+      &[
+        ("", "[", " pool", KeyCode::Char('[')),
+        ("pool ", "]", "", KeyCode::Char(']')),
       ],
     );
   }
@@ -490,7 +507,7 @@ mod tests {
       hits: Vec::new(),
       picker: false,
       preset: None,
-      pool: 0,
+      pool: None,
       selected: 0,
       sessions: vec![None],
       sort: 0,

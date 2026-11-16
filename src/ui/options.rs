@@ -197,6 +197,11 @@ fn rows(category: usize) -> Vec<OptionRow> {
           OptionRow { key: "mem_graphs", label: "Memory graphs", description: "Show history graphs for memory values. Turn off for meters with the same current values and total-RAM scale." },
           OptionRow { key: "show_disks", label: "Show storage", description: "Show pools and aggregate disk I/O beside memory. Turn off to give memory the whole panel." },
           OptionRow { key: "show_arc", label: "Show ARC/cache", description: "Show ARC cache size and reported ARC-free memory separately. These overlap RAM; never add them to Used or Available. Turn off for RAM-only presentation." },
+          OptionRow { key: "disks_filter", label: "Pool filter", description: "Space-separated pool-name fragments to include. Prefix exclude= to exclude matches. Empty shows all pools. Brackets select within matching pools." },
+          OptionRow { key: "show_io_stat", label: "Show disk I/O", description: "Show existing aggregate disk statistics. Turn off to give pool capacity the full storage area." },
+          OptionRow { key: "io_mode", label: "I/O view", description: "Use the storage area for aggregate read/write graphs instead of pool capacity and busy history. These are all-disk values, not selected-pool measurements." },
+          OptionRow { key: "io_graph_combined", label: "Combined I/O graph", description: "In I/O view, combine read and write rates. Turn off for read above and write below on one shared scale." },
+          OptionRow { key: "io_graph_scale", label: "I/O scale (bytes/s)", description: "Fixed graph maximum in bytes per second. Zero scales to retained history. Combined mode scales read plus write, separate mode scales each direction." },
         ]);
       }
       rows

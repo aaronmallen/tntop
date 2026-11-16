@@ -5,7 +5,7 @@ pub(super) fn draw(
   frame: &mut Frame,
   area: Rect,
   state: &State,
-  pool_index: usize,
+  selected: &mut Option<String>,
   theme: &Theme,
   settings: &Settings,
 ) {
@@ -109,28 +109,51 @@ pub(super) fn draw(
     foot,
   );
   if settings.show_disks() {
-    disks(frame, storage, state, pool_index, theme, settings);
+    disks(frame, storage, state, selected, theme, settings);
   }
 }
 
-fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &Theme, settings: &Settings) {
+fn disks(
+  frame: &mut Frame,
+  area: Rect,
+  state: &State,
+  selected: &mut Option<String>,
+  theme: &Theme,
+  settings: &Settings,
+) {
   let symbol = graph_symbol(settings, theme, settings.graph_symbol_mem());
   let bytes = |value| super::bytes(value, settings.base_10_sizes());
   let block = panel(" disks / pools ", "mem_box", theme);
   let inner = block.inner(area);
   frame.render_widget(block, area);
   let Some(metrics) = state.history().back() else { return };
-  let [pools, io] = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(inner);
-  let entries: Vec<_> = metrics.pools().iter().collect();
+  let [pools, io] = if !settings.show_io_stat() {
+    [inner, Rect::default()]
+  } else if settings.io_mode() {
+    [Rect::default(), inner]
+  } else {
+    Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(inner)
+  };
+  let entries = super::super::storage::names(metrics, settings.disks_filter());
+  if !selected.as_ref().is_some_and(|name| entries.contains(name)) {
+    *selected = entries.first().cloned();
+  }
   let visible = (pools.height / 3).max(1) as usize;
-  let start = index % entries.len().max(1);
-  for (row, (name, pool)) in entries
+  let start = selected
+    .as_ref()
+    .and_then(|name| entries.iter().position(|entry| entry == name))
+    .unwrap_or(0);
+  if entries.is_empty() {
+    frame.render_widget(Paragraph::new("No matching pools / unavailable"), pools);
+  }
+  for (row, name) in entries
     .iter()
     .cycle()
     .skip(start)
     .take(visible.min(entries.len()))
     .enumerate()
   {
+    let pool = &metrics.pools()[name];
     let y = pools.y + row as u16 * 3;
     if y >= pools.bottom() {
       break;
@@ -158,6 +181,9 @@ fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &The
       );
     }
   }
+  if !settings.show_io_stat() {
+    return;
+  }
   let Some(disks) = metrics.disks() else {
     frame.render_widget(Paragraph::new("Disk I/O unavailable"), io);
     return;
@@ -167,7 +193,7 @@ fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &The
   meter(
     frame,
     busy,
-    "I/O all",
+    "I/O all disks",
     disks.busy() / 100.0,
     &format!("{:.0}%", disks.busy()),
     "used",
@@ -176,19 +202,92 @@ fn disks(frame: &mut Frame, area: Rect, state: &State, index: usize, theme: &The
   let history: Vec<_> = state
     .history()
     .iter()
-    .map(|sample| sample.disks().as_ref().map(|disks| disks.busy()).unwrap_or(0.0))
+    .map(|sample| sample.disks().as_ref().map(|disks| disks.busy()).unwrap_or(f64::NAN))
     .collect();
-  frame.render_widget(
-    Graph {
-      values: &history,
-      maximum: 100.0,
-      gradient: "used",
-      theme,
-      inverted: false,
-      symbol,
-    },
-    chart,
-  );
+  if settings.io_mode() {
+    let read: Vec<_> = state
+      .history()
+      .iter()
+      .map(|sample| {
+        sample
+          .disks()
+          .as_ref()
+          .map(|disk| disk.read_bytes())
+          .unwrap_or(f64::NAN)
+      })
+      .collect();
+    let write: Vec<_> = state
+      .history()
+      .iter()
+      .map(|sample| {
+        sample
+          .disks()
+          .as_ref()
+          .map(|disk| disk.write_bytes())
+          .unwrap_or(f64::NAN)
+      })
+      .collect();
+    let combined: Vec<_> = read.iter().zip(&write).map(|(read, write)| read + write).collect();
+    let maximum = if settings.io_graph_scale() == 0 {
+      if settings.io_graph_combined() {
+        combined.iter().copied().fold(1.0, f64::max)
+      } else {
+        read.iter().chain(&write).copied().fold(1.0, f64::max)
+      }
+    } else {
+      settings.io_graph_scale() as f64
+    };
+    let [label, graph] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(chart);
+    frame.render_widget(
+      Paragraph::new(format!(
+        "All disks {} | {}/s",
+        if settings.io_graph_combined() { "R+W" } else { "R / W" },
+        bytes(maximum)
+      )),
+      label,
+    );
+    if settings.io_graph_combined() {
+      frame.render_widget(
+        Graph {
+          values: &combined,
+          maximum,
+          gradient: "used",
+          theme,
+          inverted: false,
+          symbol,
+        },
+        graph,
+      );
+    } else {
+      let [read_area, write_area] =
+        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(graph);
+      for (values, area, inverted) in [(&read, read_area, false), (&write, write_area, true)] {
+        frame.render_widget(
+          Graph {
+            values,
+            maximum,
+            gradient: "used",
+            theme,
+            inverted,
+            symbol,
+          },
+          area,
+        );
+      }
+    }
+  } else {
+    frame.render_widget(
+      Graph {
+        values: &history,
+        maximum: 100.0,
+        gradient: "used",
+        theme,
+        inverted: false,
+        symbol,
+      },
+      chart,
+    );
+  }
   frame.render_widget(
     Paragraph::new(vec![
       Line::from(format!("R {}/s", bytes(disks.read_bytes()))),
@@ -217,6 +316,51 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[test]
+    fn it_labels_aggregate_io_modes_and_scales_without_attributing_them_to_pools() {
+      let state = crate::client::fixtures::state();
+      let theme = Theme::default();
+      let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 30)).unwrap();
+      for combined in [false, true] {
+        let settings = Settings::default()
+          .with_preference("io_mode", json!(true))
+          .unwrap()
+          .with_preference("io_graph_combined", json!(combined))
+          .unwrap()
+          .with_preference("io_graph_scale", json!(1048576))
+          .unwrap();
+        draw_frame(&mut terminal, &state, &theme, &settings);
+        let output = text(&terminal);
+        assert!(output.contains("I/O all disks"));
+        assert!(output.contains(if combined { "All disks R+W" } else { "All disks R / W" }));
+        assert!(output.contains("1.0 MiB/s"));
+        assert!(!output.contains("storage_share"));
+        let settings = settings.with_preference("show_io_stat", json!(false)).unwrap();
+        draw_frame(&mut terminal, &state, &theme, &settings);
+        let output = text(&terminal);
+        assert!(output.contains("storage_share"));
+        assert!(!output.contains("I/O all disks"));
+      }
+      let settings = Settings::default()
+        .with_preference("disks_filter", json!("missing"))
+        .unwrap();
+      draw_frame(&mut terminal, &state, &theme, &settings);
+      assert!(text(&terminal).contains("No matching pools"));
+      assert!(text(&terminal).contains("I/O all disks"));
+      let metrics = serde_json::from_value(json!({
+        "cpu":{"cpu":{"usage":0}}, "interfaces":{},
+        "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":500}
+      }))
+      .unwrap();
+      draw_frame(
+        &mut terminal,
+        &crate::client::fixtures::with_metrics(metrics),
+        &theme,
+        &settings,
+      );
+      assert!(text(&terminal).contains("Disk I/O unavailable"));
+    }
 
     #[test]
     fn it_keeps_memory_meaning_across_graphs_meters_and_storage_visibility() {
@@ -273,7 +417,7 @@ mod tests {
       settings: &Settings,
     ) {
       terminal
-        .draw(|frame| draw(frame, frame.area(), state, 0, theme, settings))
+        .draw(|frame| draw(frame, frame.area(), state, &mut None, theme, settings))
         .unwrap();
     }
 
