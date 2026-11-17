@@ -2,7 +2,6 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser;
 use getset::{CopyGetters, Getters};
-use log::LevelFilter;
 
 use crate::{config::Settings, logger::Logger, ui::Banner};
 
@@ -102,7 +101,7 @@ type Result<T> = std::result::Result<T, Error>;
 pub async fn run() -> Result<()> {
   let app = App::parse();
 
-  setup_logging(app.debug_mode())?;
+  Logger::init(app.debug_mode())?;
 
   if app.print_version() {
     anstream::println!("{}", Banner::new().with_author().with_version());
@@ -119,18 +118,6 @@ pub async fn run() -> Result<()> {
   let context = Context::new(config_path.clone(), settings);
 
   app.call(context).await
-}
-
-fn setup_logging(debug_mode: bool) -> Result<()> {
-  log::set_logger(&Logger)?;
-
-  if debug_mode {
-    log::set_max_level(LevelFilter::Trace);
-  } else {
-    log::set_max_level(LevelFilter::Warn);
-  }
-
-  Ok(())
 }
 
 #[cfg(test)]

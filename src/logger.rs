@@ -2,7 +2,10 @@ use std::{
   fs::File,
   io::{self, Write},
   path::Path,
-  sync::Mutex,
+  sync::{
+    Mutex,
+    atomic::{AtomicBool, Ordering},
+  },
 };
 
 use log::Log;
@@ -10,22 +13,32 @@ use log::Log;
 pub struct Logger;
 
 static OUTPUT: Mutex<Option<File>> = Mutex::new(None);
+static DEBUG: AtomicBool = AtomicBool::new(false);
 
 impl Logger {
+  pub fn init(debug: bool) -> Result<(), log::SetLoggerError> {
+    log::set_logger(&Self)?;
+    DEBUG.store(debug, Ordering::Relaxed);
+    Self::set_level(log::LevelFilter::Warn);
+    Ok(())
+  }
+
   pub fn redirect(path: &Path, level: log::LevelFilter) -> io::Result<impl Drop + use<>> {
     let file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
     let output = Output {
       file: OUTPUT.lock().unwrap().replace(file),
       level: log::max_level(),
     };
-    log::set_max_level(level);
+    Self::set_level(level);
     Ok(output)
   }
 
   pub fn set_level(level: log::LevelFilter) {
-    if OUTPUT.lock().unwrap().is_some() {
-      log::set_max_level(level);
-    }
+    log::set_max_level(if DEBUG.load(Ordering::Relaxed) {
+      log::LevelFilter::Trace
+    } else {
+      level
+    });
   }
 }
 
@@ -107,13 +120,24 @@ mod tests {
         );
       }
       assert_eq!(log::max_level(), prior);
-      assert!(OUTPUT.lock().unwrap().is_none());
+      Logger::init(true).unwrap();
+      {
+        let _output = Logger::redirect(&path, log::LevelFilter::Warn).unwrap();
+        log::trace!("debug after redirect");
+        Logger::set_level(log::LevelFilter::Error);
+        log::trace!("debug after preferences");
+      }
       let text = std::fs::read_to_string(&path).unwrap();
+      assert!(text.contains("debug after redirect"));
+      assert!(text.contains("debug after preferences"));
+      assert!(OUTPUT.lock().unwrap().is_none());
       assert!(text.contains("visible"));
       assert!(text.contains("enabled"));
       assert!(!text.contains("hidden"));
       assert!(Logger::redirect(directory.path(), log::LevelFilter::Trace).is_err());
-      assert_eq!(log::max_level(), prior);
+      assert_eq!(log::max_level(), log::LevelFilter::Trace);
+      DEBUG.store(false, Ordering::Relaxed);
+      log::set_max_level(prior);
     }
   }
 }

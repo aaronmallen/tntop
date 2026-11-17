@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 - Slow optional API replies no longer hold up live metrics or distort sample timing.
 - Stalled app statistics trigger a reconnect and stay stale until a valid sample arrives.
 - Connection errors take priority over footer notices, and success notices expire.
+- The debug flag keeps trace logging enabled after UI startup and preference changes.
 
 ## [0.2.1] - 2026-11-16
 
