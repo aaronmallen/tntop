@@ -16,7 +16,7 @@ pub(super) fn draw(
   } else {
     [area, Rect::default()]
   };
-  let block = panel(" mem / zfs ", "mem_box", theme);
+  let block = panel("2 mem / zfs", "mem_box", theme);
   let inner = block.inner(memory);
   frame.render_widget(block, memory);
   let Some(metrics) = state.history().back() else {

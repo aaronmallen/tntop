@@ -293,6 +293,7 @@ mod tests {
       message: None,
       menu: None,
       menu_parent: None,
+      interval_repeat: None,
       options: Default::default(),
       hits: Vec::new(),
       picker: true,

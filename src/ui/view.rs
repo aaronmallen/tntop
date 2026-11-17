@@ -68,6 +68,8 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     .unwrap_or_default();
   let [header, body, footer] =
     Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
+  let [cpu, memory, network, apps] = super::layout::areas(body, settings);
+  let border_navigation = cpu.width >= 48 && cpu.height > 1;
   let clock_text = super::clock::format(
     settings.clock_format(),
     &settings.servers()[ui.selected],
@@ -77,8 +79,8 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   let clock_width = Line::from(clock_text.as_str()).width().min((header.width / 3) as usize) as u16;
   let [heading, navigation, presets, clock] = Layout::horizontal([
     Constraint::Min(1),
-    Constraint::Length(15),
-    Constraint::Length(22),
+    Constraint::Length(if border_navigation { 9 } else { 15 }),
+    Constraint::Length(if border_navigation { 0 } else { 22 }),
     Constraint::Length(clock_width),
   ])
   .areas(header);
@@ -90,16 +92,22 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     &mut ui.hits,
     navigation,
     theme,
-    &[
-      ("", "m", "enu", KeyCode::Char('m')),
-      ("", "s", "ervers", KeyCode::Char('s')),
-    ],
+    None,
+    if border_navigation {
+      &[("", "s", "ervers", KeyCode::Char('s'))]
+    } else {
+      &[
+        ("", "m", "enu", KeyCode::Char('m')),
+        ("", "s", "ervers", KeyCode::Char('s')),
+      ]
+    },
   );
   super::mouse::controls(
     frame,
     &mut ui.hits,
     presets,
     theme,
+    None,
     &[
       ("", "P", " ‹", KeyCode::Char('P')),
       ("", "p", &label, KeyCode::Char('p')),
@@ -124,7 +132,6 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     heading,
   );
   frame.render_widget(Paragraph::new(clock_text).alignment(Alignment::Right), clock);
-  let [cpu, memory, network, apps] = super::layout::areas(body, settings);
   if !cpu.is_empty() {
     cpu::draw(frame, cpu, &state, theme, settings);
   }
@@ -144,26 +151,62 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     (apps, '4', " apps"),
   ] {
     if area.width > 2 && area.height > 1 {
+      let y = if hotkey == '1' && settings.cpu_bottom() {
+        area.bottom() - 1
+      } else {
+        area.y
+      };
+      ui.hits.push((
+        Rect::new(area.x + 2, y, (label.len() as u16 + 2).min(area.width - 3), 1),
+        super::mouse::Action::Key(KeyCode::Char(hotkey)),
+      ));
+    }
+  }
+  let interval = format!("{}ms", settings.update_ms());
+  let interval_width = Line::from(interval.as_str()).width() as u16 + 6;
+  if cpu.width >= interval_width + 12 && cpu.height > 1 {
+    let y = if settings.cpu_bottom() { cpu.bottom() - 1 } else { cpu.y };
+    let interval_area = Rect::new(cpu.right() - interval_width - 2, y, interval_width, 1);
+    let border = ui.theme.style().fg(ui.theme.color("cpu_box"));
+    let hotkey = ui
+      .theme
+      .style()
+      .fg(ui.theme.color("hi_fg"))
+      .add_modifier(Modifier::BOLD);
+    frame.render_widget(
+      Paragraph::new(Line::from(vec![
+        Span::styled(if settings.cpu_bottom() { "┘" } else { "┐" }, border),
+        Span::styled("- ", hotkey),
+        Span::styled(interval, ui.theme.style().fg(ui.theme.color("title"))),
+        Span::styled(" +", hotkey),
+        Span::styled(if settings.cpu_bottom() { "└" } else { "┌" }, border),
+      ])),
+      interval_area,
+    );
+    ui.hits.push((
+      Rect::new(interval_area.x + 1, y, 2, 1),
+      super::mouse::Action::Key(KeyCode::Char('-')),
+    ));
+    ui.hits.push((
+      Rect::new(interval_area.right() - 3, y, 2, 1),
+      super::mouse::Action::Key(KeyCode::Char('+')),
+    ));
+    if border_navigation {
+      let preset = ui
+        .preset
+        .map_or_else(|| "reset *".into(), |index| format!("reset {index}"));
       super::mouse::controls(
         frame,
         &mut ui.hits,
-        Rect::new(area.x + 1, area.y, area.width - 2, 1),
+        Rect::new(cpu.x + 10, y, interval_area.x.saturating_sub(cpu.x + 11), 1),
         &ui.theme,
-        &[("", &hotkey.to_string(), label, KeyCode::Char(hotkey))],
+        Some(("cpu_box", settings.cpu_bottom())),
+        &[
+          ("", "m", "enu", KeyCode::Char('m')),
+          ("", "p", &preset, KeyCode::Char('p')),
+        ],
       );
     }
-  }
-  if cpu.width > 12 && cpu.height > 1 {
-    super::mouse::controls(
-      frame,
-      &mut ui.hits,
-      Rect::new(cpu.x + 10, cpu.y, cpu.width - 11, 1),
-      &ui.theme,
-      &[
-        ("", "-", "", KeyCode::Char('-')),
-        ("", "+", &format!(" {}ms", settings.update_ms()), KeyCode::Char('+')),
-      ],
-    );
   }
   if settings.show_disks() && memory.width > 4 && memory.height > 1 {
     super::mouse::controls(
@@ -176,6 +219,7 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
         1,
       ),
       &ui.theme,
+      Some(("mem_box", true)),
       &[
         ("", "[", " pool", KeyCode::Char('[')),
         ("pool ", "]", "", KeyCode::Char(']')),
@@ -210,13 +254,47 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 }
 
 pub(super) fn panel<'a>(title: &str, color: &str, theme: &Theme) -> Block<'a> {
-  Block::bordered()
+  let block = Block::bordered()
     .border_type(BorderType::Rounded)
-    .border_style(Style::default().fg(theme.color(color)))
-    .title(Span::styled(
+    .border_style(Style::default().fg(theme.color(color)));
+  if title.is_empty() {
+    block
+  } else {
+    block.title(panel_title(title, color, theme, false))
+  }
+}
+
+fn panel_title(title: &str, color: &str, theme: &Theme, bottom: bool) -> Line<'static> {
+  let title = title.trim();
+  let (number, title) = match title.split_once(' ') {
+    Some((number @ ("1" | "2" | "3" | "4"), title)) => {
+      let number = if theme.is_tty() {
+        number
+      } else {
+        match number {
+          "1" => "¹",
+          "2" => "²",
+          "3" => "³",
+          _ => "⁴",
+        }
+      };
+      (number, title)
+    }
+    _ => ("", title),
+  };
+  let border = Style::default().fg(theme.color(color));
+  Line::from(vec![
+    Span::styled(if bottom { "─┘" } else { "─┐" }, border),
+    Span::styled(
+      number.to_owned(),
+      Style::default().fg(theme.color("hi_fg")).add_modifier(Modifier::BOLD),
+    ),
+    Span::styled(
       title.to_owned(),
       Style::default().fg(theme.color("title")).add_modifier(Modifier::BOLD),
-    ))
+    ),
+    Span::styled(if bottom { "└" } else { "┌" }, border),
+  ])
 }
 
 fn age(instant: Option<std::time::Instant>) -> String {
@@ -509,6 +587,7 @@ mod tests {
       message: None,
       menu: None,
       menu_parent: None,
+      interval_repeat: None,
       options: Default::default(),
       hits: Vec::new(),
       picker: false,
@@ -570,6 +649,66 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn it_right_aligns_interval_controls_and_joins_the_correct_border() {
+      use crate::ui::mouse::Action;
+      let mut ui = ui();
+      let (_, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      for (width, interval, bottom, tty) in [
+        (160, 2000, false, false),
+        (70, 86400000, true, false),
+        (80, 100, false, true),
+      ] {
+        let settings = settings()
+          .with_preference("update_ms", serde_json::json!(interval))
+          .unwrap()
+          .with_preference("cpu_bottom", serde_json::json!(bottom))
+          .unwrap()
+          .with_preference("force_tty", serde_json::json!(tty))
+          .unwrap();
+        ui.theme = crate::ui::load_theme(&settings, std::path::Path::new("config.toml")).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
+        terminal
+          .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+          .unwrap();
+        let cpu = crate::ui::layout::areas(Rect::new(0, 1, width, 38), &settings)[0];
+        let y = if bottom { cpu.bottom() - 1 } else { cpu.y };
+        let row: String = (cpu.x..cpu.right())
+          .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+          .collect();
+        assert!(row.contains(&format!("- {interval}ms +")));
+        assert!(row.contains(if tty { "1cpu" } else { "¹cpu" }));
+        assert!(row.contains(if tty {
+          "+menu+"
+        } else if bottom {
+          "┘menu└"
+        } else {
+          "┐menu┌"
+        }));
+        for key in ['-', '+'] {
+          let area = ui
+            .hits
+            .iter()
+            .find_map(|(area, action)| matches!(action, Action::Key(KeyCode::Char(c)) if *c == key).then_some(*area))
+            .unwrap();
+          assert_eq!(area.y, y);
+          assert!(area.x > cpu.x + cpu.width / 2);
+          let symbols: String = (area.x..area.right())
+            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+            .collect();
+          assert!(symbols.contains(key));
+          if key == '+' {
+            assert_eq!(area.right(), cpu.right() - 3);
+          }
+        }
+      }
+    }
+
+    #[tokio::test]
     async fn it_places_clickable_hotkeys_on_panel_borders_and_keeps_navigation_when_hidden() {
       use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
@@ -625,7 +764,16 @@ mod tests {
         for key in ['m', 's', '1', '2', '3', '4'] {
           let (area, _) = controls.iter().find(|(_, code)| *code == KeyCode::Char(key)).unwrap();
           let hotkey = &terminal.backend().buffer()[(area.x + 1, area.y)];
-          assert_eq!(hotkey.symbol(), key.to_string());
+          assert_eq!(
+            hotkey.symbol(),
+            match key {
+              '1' => "¹".into(),
+              '2' => "²".into(),
+              '3' => "³".into(),
+              '4' => "⁴".into(),
+              _ => key.to_string(),
+            }
+          );
           assert_eq!(hotkey.fg, ui.theme.color("hi_fg"));
           assert!(hotkey.modifier.contains(Modifier::BOLD));
           assert_eq!(

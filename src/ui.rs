@@ -76,6 +76,7 @@ struct Ui {
   message: Option<String>,
   menu: Option<menu::Menu>,
   menu_parent: Option<usize>,
+  interval_repeat: Option<(KeyCode, Instant, u8)>,
   options: options::Options,
   hits: Vec<(ratatui::layout::Rect, mouse::Action)>,
   picker: bool,
@@ -129,6 +130,7 @@ pub async fn run(
     message: None,
     menu: None,
     menu_parent: None,
+    interval_repeat: None,
     options: Default::default(),
     hits: Vec::new(),
     picker: selected.is_none(),
@@ -252,6 +254,7 @@ async fn run_terminal(
       if key.kind == KeyEventKind::Release {
         continue;
       }
+      let interval = interval_value(ui, settings.update_ms(), key.code, Instant::now());
       if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(());
       }
@@ -310,12 +313,8 @@ async fn run_terminal(
         continue;
       }
       match key.code {
-        KeyCode::Char('+' | '-') => {
-          let value = if key.code == KeyCode::Char('+') {
-            settings.update_ms().saturating_add(100).min(86400000)
-          } else {
-            settings.update_ms().saturating_sub(100).max(100)
-          };
+        KeyCode::Char('+' | '-' | '=') => {
+          let value = interval.unwrap();
           let result = settings
             .with_preference("update_ms", serde_json::json!(value))
             .map_err(Error::from)
@@ -363,6 +362,32 @@ async fn run_terminal(
   }
 }
 
+fn interval_value(ui: &mut Ui, current: u64, key: KeyCode, now: Instant) -> Option<u64> {
+  if !matches!(key, KeyCode::Char('+' | '-' | '=')) {
+    ui.interval_repeat = None;
+    return None;
+  }
+  let previous = ui.interval_repeat.filter(|(last, _, _)| *last == key);
+  let count = previous.map_or(1, |(_, _, count)| count.saturating_add(1).min(50));
+  let rapid =
+    count == 50 && previous.is_some_and(|(_, time, _)| now.duration_since(time) <= Duration::from_millis(200));
+  ui.interval_repeat = Some((key, now, count));
+  let value = if key == KeyCode::Char('-') {
+    current
+      .saturating_sub(if rapid && current >= 2000 { 1000 } else { 100 })
+      .max(100)
+  } else {
+    current
+      .saturating_add(if rapid && key == KeyCode::Char('+') && current <= 86399000 {
+        1000
+      } else {
+        100
+      })
+      .min(86400000)
+  };
+  Some(value)
+}
+
 fn draw(terminal: &mut ratatui::DefaultTerminal, ui: &mut Ui, settings: &Settings) -> Result<(), Error> {
   use ratatui::crossterm::SynchronizedUpdate;
   let synchronize = settings.tty_sync() && !ui.theme.is_tty();
@@ -408,6 +433,55 @@ fn select(settings: &Settings, name: Option<&str>) -> Result<Option<usize>, Erro
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn it_accelerates_repeated_interval_keys_and_keeps_bounds() {
+    let mut ui = Ui::default();
+    let now = Instant::now();
+    assert_eq!(interval_value(&mut ui, 2000, KeyCode::Char('='), now), Some(2100));
+    for index in 0..49 {
+      assert_eq!(
+        interval_value(
+          &mut ui,
+          2000,
+          KeyCode::Char('+'),
+          now + Duration::from_millis(index * 50)
+        ),
+        Some(2100)
+      );
+    }
+    assert_eq!(
+      interval_value(&mut ui, 2000, KeyCode::Char('+'), now + Duration::from_millis(2450)),
+      Some(3000)
+    );
+    assert_eq!(
+      interval_value(&mut ui, 86400000, KeyCode::Char('+'), now + Duration::from_millis(2500)),
+      Some(86400000)
+    );
+    assert_eq!(
+      interval_value(&mut ui, 2000, KeyCode::Char('+'), now + Duration::from_secs(3)),
+      Some(2100)
+    );
+    for _ in 0..50 {
+      interval_value(&mut ui, 2000, KeyCode::Char('-'), now + Duration::from_secs(4));
+    }
+    assert_eq!(
+      interval_value(&mut ui, 2000, KeyCode::Char('-'), now + Duration::from_secs(4)),
+      Some(1000)
+    );
+    assert_eq!(
+      interval_value(&mut ui, 100, KeyCode::Char('-'), now + Duration::from_secs(4)),
+      Some(100)
+    );
+    assert_eq!(
+      interval_value(&mut ui, 2000, KeyCode::Char('r'), now + Duration::from_secs(4)),
+      None
+    );
+    assert_eq!(
+      interval_value(&mut ui, 2000, KeyCode::Char('-'), now + Duration::from_secs(4)),
+      Some(1900)
+    );
+  }
+
   use super::*;
 
   mod navigation {

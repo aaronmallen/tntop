@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 ## [Unreleased]
 
+### Fixed
+
+- Options uses Tab for categories and arrows for settings and values, with
+  wrapping, visible-page navigation and numbered category shortcuts.
+- Help and Options close with their btop shortcuts and return to their entry point.
+- CPU core columns adapt to panel space before hiding readings.
+- App filters support cursor editing, live results, cancel and Down to accept.
+- Clicking a selected app opens its details.
+- App filter, follow and pause keys match btop, with shortcuts for per-core CPU,
+  memory units and storage views.
+- Network labels and readings move with swapped graphs. Default interface
+  selection prefers active traffic, and automatic scales recover from old bursts.
+- Panel numbers, title joins and Menu/Preset placement match btop borders.
+- Refresh controls use a right-aligned minus/value/plus layout, accept equals,
+  and accelerate held plus/minus keys.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

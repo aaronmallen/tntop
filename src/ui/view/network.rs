@@ -21,6 +21,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     &mut ui.hits,
     controls,
     theme,
+    Some(("net_box", true)),
     &[
       ("", "b", " ‹", KeyCode::Char('b')),
       ("", "n", " ›", KeyCode::Char('n')),

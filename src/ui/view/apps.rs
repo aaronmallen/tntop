@@ -27,6 +27,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       &mut ui.hits,
       header,
       theme,
+      Some(("proc_box", false)),
       &[
         ("", "←", "", KeyCode::Left),
         ("", "→", settings.apps_sort(), KeyCode::Right),
@@ -59,6 +60,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       u16::from(area.height > 1),
     ),
     theme,
+    Some(("proc_box", true)),
     &[
       (
         "",

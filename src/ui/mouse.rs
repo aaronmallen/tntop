@@ -10,6 +10,7 @@ pub(super) fn controls(
   hits: &mut Vec<(Rect, Action)>,
   area: Rect,
   theme: &super::theme::Theme,
+  border: Option<(&str, bool)>,
   labels: &[(&str, &str, &str, KeyCode)],
 ) {
   use ratatui::{
@@ -21,13 +22,23 @@ pub(super) fn controls(
   }
   let mut x = area.x;
   for (before, hotkey, after, key) in labels {
+    let (left, right) = match border {
+      Some((_, true)) => ("┘", "└"),
+      Some((_, false)) => ("┐", "┌"),
+      None => (" ", " "),
+    };
+    let border_style = theme
+      .style()
+      .fg(theme.color(border.map_or("title", |(color, _)| color)));
     let line = Line::from(vec![
-      Span::raw(format!(" {before}")),
+      Span::styled(left, border_style),
+      Span::raw(*before),
       Span::styled(
         *hotkey,
         theme.style().fg(theme.color("hi_fg")).add_modifier(Modifier::BOLD),
       ),
-      Span::raw(format!("{after} ")),
+      Span::raw(*after),
+      Span::styled(right, border_style),
     ])
     .style(theme.style().fg(theme.color("title")));
     let width = line.width() as u16;

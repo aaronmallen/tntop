@@ -111,7 +111,7 @@ Each panel category owns its display settings.
 | Outside editors | Ctrl-R | Reload preferences |
 | Dashboard | 1 / 2 / 3 / 4 | Toggle CPU / Memory / Network / Apps |
 | Dashboard | p / P | Next / previous enabled preset |
-| Dashboard | + / - | Change redraw interval by 100 ms |
+| Dashboard | + / = / - | Change redraw interval; held +/- accelerates |
 | Dashboard | [ / ] | Previous / next matching pool |
 | Dashboard | b / n | Previous / next network interface |
 | Dashboard | a / y | Toggle automatic / synchronized network scales |
@@ -146,11 +146,17 @@ Editors consume shortcuts before dashboard actions, so letters such as
 Enter or Down accepts it, and Escape restores the previous filter.
 
 Click Main choices, Options categories and settings, theme-preview
-controls, header preset arrows and panel-border controls. Hotkeys use a
+controls, preset controls and panel-border controls. Hotkeys use a
 highlight color within each control. Click a panel title to hide it;
 keys **1–4** or Options show it again. Click a server
 to open it or an app row to select it. Scroll over lists and Help.
 **Disable mouse** releases capture for terminal text selection.
+
+Panel titles use superscript numbers and join into their borders.
+TTY mode uses plain digits. Menu and Preset sit in the CPU border;
+the header keeps them reachable when that panel is hidden or too narrow.
+The CPU border's right edge holds **- interval +**. With CPU at the bottom,
+its title and controls use the lower border.
 
 ## Themes
 
@@ -212,8 +218,10 @@ presets = "cpu:1:default,proc:0:default cpu:0:default,mem:0:default,net:0:defaul
 Edit definitions in General Options or the config file. Invalid definitions
 leave the live settings intact. An empty string leaves only preset 0.
 
-Press **p/P** or click the header arrows to cycle forward/back. The header shows
-the active preset, or **manual** after a layout change. `tntop --preset 2` selects
+Press **p/P** to cycle forward/back, or click Preset to cycle forward.
+The CPU border shows the active preset, or **\*** after a layout change.
+When the CPU border cannot hold these controls, header arrows and **manual**
+provide the same controls and status. `tntop --preset 2` selects
 a preset at startup. **Disable presets** in General accepts `off`, `default`
 (preset 0), `custom` (presets 1–9) or `all`. Cycling skips disabled choices;
 startup selection reports an error for a disabled or missing preset.
@@ -250,11 +258,13 @@ uses the existing TrueNAS uptime reading.
 
 ## Refresh and logging
 
-Set **Redraw interval (ms)** in Options or press **+/-** on the dashboard to
+Set **Redraw interval (ms)** in Options or press **+**, **=** or **-** on the dashboard to
 change redraw timing by 100 ms, within 100..86400000 ms. Collection has a
 2000 ms floor; TrueNAS stream intervals round up to whole seconds. Changes
 above that floor reconnect the existing collector with its history intact.
 Faster painting does not produce more server data.
+After 50 repeated **+** or **-** presses, repeats within 200 ms use
+1000 ms steps when the interval bounds allow.
 
 Turn **Background update** off to freeze the dashboard behind menus.
 Collection continues, and resizing redraws the background once.
