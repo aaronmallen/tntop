@@ -15,7 +15,27 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, 
     );
     return;
   };
-  let sidebar = (inner.width / 3).clamp(28, 64);
+  let mut cores: Vec<_> = metrics
+    .cpu()
+    .iter()
+    .filter(|(name, _)| name.as_str() != "cpu")
+    .collect();
+  cores.sort_by_key(|(name, _)| name.trim_start_matches("cpu").parse::<usize>().unwrap_or(usize::MAX));
+  let digits = cores
+    .iter()
+    .map(|(name, _)| name.trim_start_matches("cpu").len())
+    .max()
+    .unwrap_or(1)
+    .max(3);
+  let temperatures = settings.check_temp() && settings.show_coretemp();
+  let fixed_width = digits as u16 + 9 + if temperatures { 6 } else { 0 };
+  let budget = inner.width - inner.width / 3;
+  let needed = (cores.len() as u16)
+    .div_ceil(inner.height.saturating_sub(4).max(1))
+    .max(1);
+  let columns = needed.min((budget / fixed_width).max(1));
+  let column_width = (budget / columns).min(30.max(fixed_width));
+  let sidebar = (column_width * columns).min(inner.width.saturating_sub(1));
   let [chart, details] = Layout::horizontal([Constraint::Min(1), Constraint::Length(sidebar)]).areas(inner);
   let [top, divider, bottom, uptime] = Layout::vertical([
     Constraint::Min(1),
@@ -104,13 +124,6 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, 
     Paragraph::new(up).style(Style::default().fg(theme.color("graph_text"))),
     uptime,
   );
-  let mut cores: Vec<_> = metrics
-    .cpu()
-    .iter()
-    .filter(|(name, _)| name.as_str() != "cpu")
-    .collect();
-  cores.sort_by_key(|(name, _)| name.trim_start_matches("cpu").parse::<usize>().unwrap_or(usize::MAX));
-  let columns = (details.width / 30).max(1);
   let rows = (cores.len() as u16).div_ceil(columns);
   let height = (rows + 4).min(details.height);
   let details = Rect::new(
@@ -167,21 +180,17 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, theme: &Theme, 
         .history()
         .iter()
         .map(|sample| sample.cpu().get(*name).map(|cpu| cpu.usage()).unwrap_or(0.0)),
-      width.saturating_sub(if settings.check_temp() && settings.show_coretemp() {
-        18
-      } else {
-        12
-      }),
+      width.saturating_sub(fixed_width),
       symbol,
       theme,
     );
     frame.render_widget(
       Paragraph::new(Line::from(vec![
-        Span::raw(format!(" C{:<3}", name.trim_start_matches("cpu"))),
+        Span::raw(format!(" C{:<digits$}", name.trim_start_matches("cpu"))),
         Span::styled(history, Style::default().fg(theme.gradient("cpu", cpu.usage() / 100.0))),
         Span::raw(format!(" {:3.0}% ", cpu.usage())),
         Span::styled(
-          if settings.check_temp() && settings.show_coretemp() {
+          if temperatures {
             temperature(cpu.temp(), settings.temp_scale())
           } else {
             String::new()
@@ -259,6 +268,53 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[test]
+    fn it_fits_cores_by_height_and_width_and_reflows_after_resizing() {
+      for count in [32, 128] {
+        let mut cpus = serde_json::Map::new();
+        cpus.insert("cpu".into(), json!({"usage":25, "temp":50}));
+        for index in 0..count {
+          cpus.insert(format!("cpu{index}"), json!({"usage":25, "temp":50}));
+        }
+        let state = crate::client::fixtures::with_metrics(
+          serde_json::from_value(json!({
+            "cpu":cpus, "interfaces":{},
+            "memory":{"physical_memory_total":1000,"physical_memory_available":500,"arc_size":100}
+          }))
+          .unwrap(),
+        );
+        for temps in [true, false] {
+          let settings = Settings::default()
+            .with_preference("show_coretemp", json!(temps))
+            .unwrap();
+          for (width, height, fits) in [(160, 20, count == 32), (240, 40, true), (40, 10, false), (1, 1, false)] {
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal
+              .draw(|frame| draw(frame, frame.area(), &state, &Theme::default(), &settings))
+              .unwrap();
+            let text: String = terminal
+              .backend()
+              .buffer()
+              .content
+              .iter()
+              .map(|cell| cell.symbol())
+              .collect();
+            if fits {
+              for index in 0..count {
+                assert!(
+                  text.contains(&format!(" C{index:<3}")),
+                  "missing core {index} at {width}x{height}"
+                );
+              }
+              assert!(!text.contains("enlarge terminal"));
+            } else if width >= 40 {
+              assert!(!text.contains(&format!(" C{:<3}", count - 1)));
+            }
+          }
+        }
+      }
+    }
 
     #[test]
     fn it_handles_changed_core_counts_units_and_hidden_readings() {
