@@ -20,6 +20,24 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
   if ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering {
     return None;
   }
+  let close = match ui.menu {
+    Some(Menu::Options) => matches!(key, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('q' | 'o')),
+    Some(Menu::Help(_)) => matches!(
+      key,
+      KeyCode::Esc | KeyCode::Backspace | KeyCode::Enter | KeyCode::Char('q' | 'h' | 'H' | ' ')
+    ),
+    Some(Menu::Update) => key == KeyCode::Esc,
+    _ => false,
+  };
+  if close {
+    ui.menu = ui.menu_parent.take().map(Menu::Main);
+    return Some(false);
+  }
+  if let Some(Menu::Main(row)) = ui.menu {
+    ui.menu_parent = Some(row);
+  } else if ui.menu.is_none() {
+    ui.menu_parent = None;
+  }
   if let Some(Menu::Help(offset)) = &mut ui.menu
     && super::help::handle(offset, key)
   {
@@ -36,6 +54,7 @@ pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
     KeyCode::F(1) | KeyCode::Char('?') | KeyCode::Char('h' | 'H') => ui.menu = Some(Menu::Help(0)),
     KeyCode::Char('s') => {
       ui.menu = None;
+      ui.menu_parent = None;
       ui.picker = true;
     }
     KeyCode::Down if matches!(ui.menu, Some(Menu::Main(_))) => {
@@ -180,6 +199,28 @@ fn lettering(label: &str) -> Text<'static> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn it_closes_direct_and_nested_screens_to_their_entry_point() {
+    let mut ui = Ui::default();
+    for (open, close) in [
+      (KeyCode::Char('o'), KeyCode::Char('o')),
+      (KeyCode::Char('o'), KeyCode::Char('q')),
+      (KeyCode::Char('h'), KeyCode::Char('h')),
+      (KeyCode::Char('h'), KeyCode::Enter),
+      (KeyCode::Char('h'), KeyCode::Char(' ')),
+      (KeyCode::Char('h'), KeyCode::Backspace),
+    ] {
+      handle(&mut ui, open);
+      handle(&mut ui, close);
+      assert_eq!(ui.menu, None);
+      ui.menu = Some(Menu::Main(1));
+      handle(&mut ui, open);
+      handle(&mut ui, close);
+      assert_eq!(ui.menu, Some(Menu::Main(1)));
+      handle(&mut ui, KeyCode::Esc);
+    }
+  }
 
   #[test]
   fn it_returns_one_menu_layer_and_keeps_dashboard_selection() {

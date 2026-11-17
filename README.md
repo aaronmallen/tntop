@@ -127,12 +127,15 @@ Each panel category owns its display settings.
 | Servers | e / t | Change API key / review HTTPS certificate |
 | Server form | Tab / Up / Down | Switch fields |
 | Main | Up / Down, Enter | Select and open an entry |
-| Options | Tab / Shift-Tab, Left / Right | Change category |
-| Options | Up / Down, Page Up / Down, Home / End | Select a setting |
+| Options | Tab / Shift-Tab, 1–5 | Change category |
+| Options | Up / Down, Page Up / Down, Home / End | Select a setting; arrows and pages wrap |
+| Options | Left / Right | Change the selected value |
 | Options | Enter / Space | Toggle, cycle or edit the selected setting |
 | Option edit | Enter / Esc | Accept / cancel |
+| Options | Esc / q / o / Backspace | Close when not editing |
 | Theme preview | Arrows, Home / End, Enter / Esc | Preview, then keep / cancel |
 | Help | Up / Down, Page Up / Down, Home / End | Scroll |
+| Help | Esc / q / h / Enter / Space / Backspace, click | Close Help |
 
 Server and Options text fields support Left/Right, Home/End and
 Backspace/Delete. Typing inserts at the cursor; long fields scroll.

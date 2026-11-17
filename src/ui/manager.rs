@@ -291,6 +291,7 @@ mod tests {
       net_baselines: Default::default(),
       message: None,
       menu: None,
+      menu_parent: None,
       options: Default::default(),
       hits: Vec::new(),
       picker: true,

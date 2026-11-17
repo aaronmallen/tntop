@@ -14,6 +14,7 @@ use crate::config::Settings;
 pub(super) struct Options {
   category: usize,
   row: usize,
+  page_size: usize,
   editing: Option<Input>,
   theme_choice: Option<ThemeChoice>,
   error: Option<String>,
@@ -336,21 +337,27 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
     return true;
   }
   match key {
-    KeyCode::Tab | KeyCode::Right => {
+    KeyCode::Tab => {
       ui.options.category = (ui.options.category + 1) % 5;
       ui.options.row = 0;
     }
-    KeyCode::BackTab | KeyCode::Left => {
+    KeyCode::BackTab => {
       ui.options.category = (ui.options.category + 4) % 5;
       ui.options.row = 0;
     }
-    KeyCode::Down => ui.options.row = (ui.options.row + 1).min(rows.len().saturating_sub(1)),
-    KeyCode::Up => ui.options.row = ui.options.row.saturating_sub(1),
-    KeyCode::PageDown => ui.options.row = (ui.options.row + 5).min(rows.len().saturating_sub(1)),
-    KeyCode::PageUp => ui.options.row = ui.options.row.saturating_sub(5),
+    KeyCode::Char(category @ '1'..='5') => ui.options.select_category(category as usize - '1' as usize),
+    KeyCode::Down => ui.options.row = (ui.options.row + 1) % rows.len(),
+    KeyCode::Up => ui.options.row = (ui.options.row + rows.len() - 1) % rows.len(),
+    KeyCode::PageDown | KeyCode::PageUp => {
+      let size = ui.options.page_size.max(1);
+      let pages = rows.len().div_ceil(size);
+      let page = ui.options.row / size;
+      ui.options.row = ((page + if key == KeyCode::PageDown { 1 } else { pages - 1 }) % pages) * size;
+    }
     KeyCode::Home => ui.options.row = 0,
     KeyCode::End => ui.options.row = rows.len().saturating_sub(1),
-    KeyCode::Enter | KeyCode::Char(' ') => {
+    KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right => {
+      let previous = key == KeyCode::Left;
       if let Some(row) = rows.get(ui.options.row) {
         match settings.preferences() {
           Ok(values) => {
@@ -384,7 +391,9 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 choices.extend(metrics.cpu().keys().filter(|name| name.as_str() != "cpu").cloned());
               }
               let index = choices.iter().position(|choice| values[row.key] == choice.as_str());
-              let next = index.map_or(0, |index| (index + 1) % choices.len());
+              let next = index.map_or(0, |index| {
+                (index + if previous { choices.len() - 1 } else { 1 }) % choices.len()
+              });
               let result = settings
                 .with_preference(row.key, Value::String(choices[next].clone()))
                 .map_err(super::Error::from)
@@ -411,7 +420,10 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 .position(|choice| values[row.key] == *choice)
                 .unwrap_or(0);
               let result = settings
-                .with_preference(row.key, Value::String(choices[(index + 1) % choices.len()].into()))
+                .with_preference(
+                  row.key,
+                  Value::String(choices[(index + if previous { choices.len() - 1 } else { 1 }) % choices.len()].into()),
+                )
                 .map_err(super::Error::from)
                 .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
               ui.options.error = result.err().map(|error| error.to_string());
@@ -421,7 +433,21 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
                 .map_err(super::Error::from)
                 .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
               ui.options.error = result.err().map(|error| error.to_string());
-            } else {
+            } else if matches!(key, KeyCode::Left | KeyCode::Right)
+              && let Some(value) = values[row.key].as_i64()
+            {
+              let step = if row.key == "update_ms" { 100 } else { 1 };
+              let value = if previous {
+                value.saturating_sub(step)
+              } else {
+                value.saturating_add(step)
+              };
+              let result = settings
+                .with_preference(row.key, Value::from(value))
+                .map_err(super::Error::from)
+                .and_then(|candidate| apply_preferences(ui, settings, path, candidate));
+              ui.options.error = result.err().map(|error| error.to_string());
+            } else if matches!(key, KeyCode::Enter | KeyCode::Char(' ')) {
               ui.options.editing = Some(Input::new(text(&values[row.key])));
               ui.options.error = None;
             }
@@ -508,7 +534,8 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
     );
   }
   let visible = left.height as usize / 2;
-  let start = ui.options.row.saturating_sub(visible.saturating_sub(1));
+  ui.options.page_size = visible.max(1);
+  let start = ui.options.row / ui.options.page_size * ui.options.page_size;
   for (index, row) in rows.iter().enumerate().skip(start).take(visible) {
     let y = left.y + (index - start) as u16 * 2;
     let selected = index == ui.options.row;
@@ -576,7 +603,7 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
         ],
       )
     } else {
-      Line::from("↑↓ select · Enter edit · Esc back").centered()
+      Line::from("↑↓ select · ←→ change · Enter edit · Esc back").centered()
     };
     frame.render_widget(
       Paragraph::new(hints).style(ui.theme.style().fg(ui.theme.color("inactive_fg"))),
@@ -588,6 +615,41 @@ pub(super) fn draw(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn it_changes_values_without_changing_category_and_pages_after_resizing() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut ui = Ui::default();
+    let mut settings = Settings::default();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    handle(&mut ui, &mut settings, &path, KeyCode::Right);
+    assert!(!settings.save_on_exit());
+    assert_eq!(ui.options.category, 0);
+    ui.options.row = rows(0).iter().position(|row| row.key == "update_ms").unwrap();
+    handle(&mut ui, &mut settings, &path, KeyCode::Left);
+    assert_eq!(settings.update_ms(), 1900);
+    handle(&mut ui, &mut settings, &path, KeyCode::Right);
+    assert_eq!(settings.update_ms(), 2000);
+    for height in [24, 40] {
+      let mut terminal = Terminal::new(TestBackend::new(100, height)).unwrap();
+      terminal.draw(|frame| draw(frame, &mut ui, &settings)).unwrap();
+      let size = ui.options.page_size;
+      handle(&mut ui, &mut settings, &path, KeyCode::Home);
+      handle(&mut ui, &mut settings, &path, KeyCode::PageDown);
+      assert_eq!(ui.options.row, size);
+      handle(&mut ui, &mut settings, &path, KeyCode::PageUp);
+      assert_eq!(ui.options.row, 0);
+      handle(&mut ui, &mut settings, &path, KeyCode::Up);
+      assert_eq!(ui.options.row, rows(0).len() - 1);
+      handle(&mut ui, &mut settings, &path, KeyCode::Down);
+      assert_eq!(ui.options.row, 0);
+    }
+    handle(&mut ui, &mut settings, &path, KeyCode::Char('5'));
+    assert_eq!(ui.options.category, 4);
+    handle(&mut ui, &mut settings, &path, KeyCode::Tab);
+    assert_eq!(ui.options.category, 0);
+  }
 
   #[tokio::test]
   async fn it_cycles_available_cpu_sources_and_saves_cpu_preferences() {

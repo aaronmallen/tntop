@@ -73,6 +73,9 @@ pub(super) fn key(ui: &mut Ui, event: MouseEvent, disabled: bool) -> Option<KeyE
   if disabled || ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering {
     return None;
   }
+  if matches!(ui.menu, Some(Menu::Help(_))) && event.kind == MouseEventKind::Down(MouseButton::Left) {
+    return Some(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+  }
   let action = ui
     .hits
     .iter()

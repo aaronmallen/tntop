@@ -75,6 +75,7 @@ struct Ui {
   net_baselines: std::collections::HashMap<(usize, String), (f64, f64)>,
   message: Option<String>,
   menu: Option<menu::Menu>,
+  menu_parent: Option<usize>,
   options: options::Options,
   hits: Vec<(ratatui::layout::Rect, mouse::Action)>,
   picker: bool,
@@ -127,6 +128,7 @@ pub async fn run(
     net_baselines: Default::default(),
     message: None,
     menu: None,
+    menu_parent: None,
     options: Default::default(),
     hits: Vec::new(),
     picker: selected.is_none(),
@@ -387,6 +389,7 @@ fn navigation(ui: &Ui, settings: &Settings, key: KeyCode) -> KeyCode {
   if !settings.vim_keys()
     || ui.dialog.is_some()
     || ui.filtering
+    || (matches!(ui.menu, Some(menu::Menu::Help(_))) && key == KeyCode::Char('h'))
     || (ui.menu == Some(menu::Menu::Options) && ui.options.editing_text())
   {
     return key;
