@@ -74,6 +74,7 @@ struct Ui {
   filtering: Option<input::Input>,
   net_baselines: std::collections::HashMap<(usize, String), (f64, f64)>,
   message: Option<String>,
+  notice: Option<(String, Instant)>,
   menu: Option<menu::Menu>,
   menu_parent: Option<usize>,
   interval_repeat: Option<(KeyCode, Instant, u8)>,
@@ -128,6 +129,7 @@ pub async fn run(
     filtering: None,
     net_baselines: Default::default(),
     message: None,
+    notice: None,
     menu: None,
     menu_parent: None,
     interval_repeat: None,
@@ -212,6 +214,14 @@ async fn run_terminal(
   let mut redraw = Instant::now();
   let mut mouse_enabled = false;
   loop {
+    if ui
+      .notice
+      .as_ref()
+      .is_some_and(|(_, deadline)| *deadline <= Instant::now())
+    {
+      ui.notice = None;
+      redraw = Instant::now();
+    }
     if ui.update.poll().await {
       redraw = Instant::now();
     }
@@ -239,6 +249,9 @@ async fn run_terminal(
     if redraw <= Instant::now() {
       draw(&mut terminal, ui, settings)?;
       redraw = Instant::now() + Duration::from_millis(settings.update_ms());
+      if let Some((_, deadline)) = ui.notice {
+        redraw = redraw.min(deadline);
+      }
     }
     if event::poll(Duration::ZERO)? {
       let event = event::read()?;
@@ -288,7 +301,8 @@ async fn run_terminal(
         match result {
           Ok(()) => {
             *baseline = settings.clone();
-            ui.message = Some("Preferences reloaded.".into());
+            ui.message = None;
+            ui.notice = Some(("Preferences reloaded.".into(), Instant::now() + Duration::from_secs(5)));
           }
           Err(error) => ui.message = Some(error.to_string()),
         }
@@ -319,10 +333,16 @@ async fn run_terminal(
             .with_preference("update_ms", serde_json::json!(value))
             .map_err(Error::from)
             .and_then(|candidate| apply_preferences(ui, settings, config_path, candidate));
-          ui.message = Some(match result {
-            Ok(()) => format!("Redraw {} ms; collection minimum 2000 ms.", settings.update_ms()),
-            Err(error) => error.to_string(),
-          });
+          match result {
+            Ok(()) => {
+              ui.message = None;
+              ui.notice = Some((
+                format!("Redraw {} ms; collection minimum 2000 ms.", settings.update_ms()),
+                Instant::now() + Duration::from_secs(5),
+              ));
+            }
+            Err(error) => ui.message = Some(error.to_string()),
+          }
         }
         KeyCode::Char('q') => return Ok(()),
         KeyCode::Down if ui.picker => ui.selected = (ui.selected + 1) % settings.servers().len().max(1),

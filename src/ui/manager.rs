@@ -291,6 +291,7 @@ mod tests {
       filtering: None,
       net_baselines: Default::default(),
       message: None,
+      notice: None,
       menu: None,
       menu_parent: None,
       interval_repeat: None,

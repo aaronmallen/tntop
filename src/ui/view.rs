@@ -236,6 +236,14 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
       body,
     );
   }
+  if state.error().is_some()
+    || ui
+      .notice
+      .as_ref()
+      .is_some_and(|(_, deadline)| *deadline <= std::time::Instant::now())
+  {
+    ui.notice = None;
+  }
   let status = match state.error() {
     Some(error) => format!(" {error} | last sample {}", age(*state.updated_at())),
     None => format!(
@@ -246,7 +254,14 @@ fn draw_content(frame: &mut Frame, ui: &mut Ui, settings: &Settings) {
   };
   frame.render_widget(
     Paragraph::new(Line::styled(
-      ui.message.clone().unwrap_or(status),
+      if state.error().is_some() {
+        status
+      } else {
+        ui.message
+          .clone()
+          .or_else(|| ui.notice.as_ref().map(|(text, _)| text.clone()))
+          .unwrap_or(status)
+      },
       Style::default().fg(ui.theme.color("graph_text")),
     )),
     footer,
@@ -585,6 +600,7 @@ mod tests {
       filtering: None,
       net_baselines: Default::default(),
       message: None,
+      notice: None,
       menu: None,
       menu_parent: None,
       interval_repeat: None,
@@ -647,6 +663,44 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[tokio::test]
+    async fn it_expires_notices_and_shows_failure_then_live_status() {
+      let mut ui = ui();
+      let (sender, receiver) = watch::channel(fixtures::state());
+      ui.sessions[0] = Some(Session {
+        interval: watch::channel(2000).0,
+        receiver,
+        task: tokio::spawn(std::future::pending()),
+      });
+      let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+      let settings = settings();
+      for expired in [true, false] {
+        ui.notice = Some((
+          "Preferences reloaded.".into(),
+          std::time::Instant::now() + std::time::Duration::from_secs(if expired { 0 } else { 5 }),
+        ));
+        terminal
+          .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+          .unwrap();
+        assert_eq!(text(&terminal).contains("Preferences reloaded."), !expired);
+      }
+      sender.send_replace(fixtures::disconnected());
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      let output = text(&terminal);
+      assert!(output.contains("connection closed | last sample"));
+      assert!(!output.contains("Preferences reloaded."));
+      sender.send_replace(fixtures::state());
+      terminal
+        .draw(|frame| super::super::draw(frame, &mut ui, &settings))
+        .unwrap();
+      let output = text(&terminal);
+      assert!(output.contains("| API 2s"));
+      assert!(!output.contains("Preferences reloaded."));
+      assert!(!output.contains("connection closed"));
+    }
 
     #[tokio::test]
     async fn it_right_aligns_interval_controls_and_joins_the_correct_border() {

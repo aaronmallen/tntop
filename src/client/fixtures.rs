@@ -61,6 +61,13 @@ pub(crate) fn without_apps() -> State {
   state
 }
 
+pub(crate) fn disconnected() -> State {
+  State {
+    error: Some("connection closed".into()),
+    ..state()
+  }
+}
+
 pub(crate) fn with_metrics(metrics: Metrics) -> State {
   let mut state = state();
   state.history.clear();
