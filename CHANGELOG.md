@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-17
+
 ### Fixed
 
 - Network arrows follow graph orientation when swapped and restored.
@@ -68,7 +70,8 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 - Initial release
 
-[Unreleased]: https://aaronmallen.dev/aaron/tntop/compare/0.2.1...HEAD
+[Unreleased]: https://aaronmallen.dev/aaron/tntop/compare/0.2.2...HEAD
+[0.2.2]: https://aaronmallen.dev/aaron/tntop/compare/0.2.1...0.2.2
 [0.2.1]: https://aaronmallen.dev/aaron/tntop/compare/0.2.0...0.2.1
 [0.2.0]: https://aaronmallen.dev/aaron/tntop/compare/0.1.0...0.2.0
 [0.1.0]: https://aaronmallen.dev/aaron/tntop/releases/tag/0.1.0
