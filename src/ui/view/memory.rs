@@ -159,24 +159,36 @@ fn disks(
       break;
     }
     frame.render_widget(
-      Paragraph::new(format!("{name} {}", bytes(pool.total()))).style(Style::default().fg(theme.color("title"))),
+      Paragraph::new(format!(
+        "{name} {}",
+        pool.total().map(&bytes).unwrap_or_else(|| "N/A".into())
+      ))
+      .style(Style::default().fg(theme.color("title"))),
       Rect::new(pools.x, y, pools.width, 1),
     );
     if y + 1 < pools.bottom() {
-      meter(
-        frame,
-        Rect::new(pools.x, y + 1, pools.width, 1),
-        "Used",
-        pool.used() / pool.total().max(1.0),
-        &format!("{:.0}%", pool.used() / pool.total().max(1.0) * 100.0),
-        "used",
-        theme,
-      );
+      let row = Rect::new(pools.x, y + 1, pools.width, 1);
+      if let Some((used, total)) = pool.used().zip(pool.total()) {
+        meter(
+          frame,
+          row,
+          "Used",
+          used / total,
+          &format!("{:.0}%", used / total * 100.0),
+          "used",
+          theme,
+        );
+      } else {
+        frame.render_widget(Paragraph::new("Used N/A"), row);
+      }
     }
     if y + 2 < pools.bottom() {
       frame.render_widget(
-        Paragraph::new(format!("Free {}", bytes(pool.available())))
-          .style(Style::default().fg(theme.color("graph_text"))),
+        Paragraph::new(format!(
+          "Free {}",
+          pool.available().map(&bytes).unwrap_or_else(|| "N/A".into())
+        ))
+        .style(Style::default().fg(theme.color("graph_text"))),
         Rect::new(pools.x, y + 2, pools.width, 1),
       );
     }
@@ -316,6 +328,27 @@ mod tests {
 
   mod draw {
     use super::*;
+
+    #[test]
+    fn it_marks_missing_pool_values_as_unavailable() {
+      let metrics = serde_json::from_value(json!({
+        "cpu":{"cpu":{"usage":25}}, "interfaces":{},
+        "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":200},
+        "pools":{"full":{"total":1000,"used":1000}, "partial":{"available":100}}
+      }))
+      .unwrap();
+      let state = crate::client::fixtures::with_metrics(metrics);
+      let settings = Settings::default()
+        .with_preference("show_io_stat", json!(false))
+        .unwrap();
+      let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
+      draw_frame(&mut terminal, &state, &Theme::default(), &settings);
+      let output = text(&terminal);
+      assert!(output.contains("Free N/A"));
+      assert!(output.contains("Used N/A"));
+      assert!(output.contains("partial N/A"));
+      assert!(output.contains("100%"));
+    }
 
     #[test]
     fn it_labels_aggregate_io_modes_and_scales_without_attributing_them_to_pools() {

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 ### Fixed
 
 - Network arrows follow graph orientation when swapped and restored.
+- Missing pool measurements show N/A without stopping other metrics.
 
 ## [0.2.1] - 2026-11-16
 

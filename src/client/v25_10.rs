@@ -42,12 +42,11 @@ pub(super) fn metrics(value: Value) -> Result<Metrics, Error> {
       .arc_free_memory()
       .is_some_and(|free| free > metrics.memory().physical_memory_total())
     || metrics.pools().values().any(|pool| {
-      !pool.total().is_finite()
-        || pool.total() <= 0.0
-        || !pool.used().is_finite()
-        || pool.used() < 0.0
-        || !pool.available().is_finite()
-        || pool.available() < 0.0
+      pool.total().is_some_and(|value| !value.is_finite() || value <= 0.0)
+        || [pool.used(), pool.available()]
+          .into_iter()
+          .flatten()
+          .any(|value| !value.is_finite() || value < 0.0)
     })
   {
     return Err(Error::Protocol("metrics contain out-of-range values".into()));
@@ -107,7 +106,7 @@ mod tests {
       assert_eq!(metrics.interfaces()["en0"].received_bytes_rate(), 2048.0);
       assert_eq!(metrics.interfaces()["en1"].received_bytes_rate(), 0.0);
       assert_eq!(metrics.disks().as_ref().unwrap().read_bytes(), 4096.0);
-      assert_eq!(metrics.pools()["tank"].available(), 60000.0);
+      assert_eq!(metrics.pools()["tank"].available(), Some(60000.0));
       assert_eq!(metrics.zfs().as_ref().unwrap().hit_ratio(), Some(0.99));
     }
 
@@ -121,6 +120,21 @@ mod tests {
       let mut value = sample();
       value["cpu"].as_object_mut().unwrap().remove("cpu");
       assert!(super::super::metrics(value).is_err());
+    }
+
+    #[test]
+    fn it_keeps_other_readings_when_pool_measurements_are_missing() {
+      let mut value = sample();
+      value["pools"]["tank"] = json!({"total":100000,"used":100000});
+      let metrics = super::super::metrics(value.clone()).unwrap();
+      assert_eq!(metrics.cpu()["cpu"].usage(), 32.5);
+      assert_eq!(metrics.interfaces()["en0"].received_bytes_rate(), 2048.0);
+      assert_eq!(metrics.pools()["tank"].available(), None);
+      for field in ["total", "used", "available"] {
+        let mut invalid = value.clone();
+        invalid["pools"]["tank"][field] = json!(-1);
+        assert!(super::super::metrics(invalid).is_err());
+      }
     }
   }
 }

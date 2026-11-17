@@ -142,9 +142,9 @@ impl NetworkTotals {
 #[derive(Clone, CopyGetters, Debug, Deserialize)]
 #[get_copy = "pub"]
 pub struct Pool {
-  available: f64,
-  total: f64,
-  used: f64,
+  available: Option<f64>,
+  total: Option<f64>,
+  used: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Getters)]
