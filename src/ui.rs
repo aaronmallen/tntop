@@ -151,6 +151,7 @@ pub async fn run(
   let result = run_terminal(&mut ui, &mut settings, config_path, &mut baseline).await;
   let _ = ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture);
   ratatui::restore();
+  ui.update.stop().await;
   drop(logging);
   result?;
   if settings.save_on_exit() {

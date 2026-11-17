@@ -107,4 +107,19 @@ mod tests {
       }
     }
   }
+
+  #[cfg(unix)]
+  mod update {
+    use super::*;
+
+    #[test]
+    fn it_quits_during_a_download_without_leaving_a_child_or_changing_the_binary() {
+      let output = Command::new("python3")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/update_test.py"))
+        .env("TEST_BINARY", env!("CARGO_BIN_EXE_tntop"))
+        .output()
+        .unwrap();
+      assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
+  }
 }

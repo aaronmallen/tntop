@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 - The debug flag keeps trace logging enabled after UI startup and preference changes.
 - Custom theme names containing dots load from the theme picker.
 - Masked API keys support cursor movement, insertion, and deletion.
+- Quitting cancels and reaps updater commands; extraction has a 30-second limit.
 
 ## [0.2.1] - 2026-11-16
 

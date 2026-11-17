@@ -1,4 +1,13 @@
-use std::{fs, io, path::Path, process::Command};
+use std::{
+  fs, io,
+  path::Path,
+  process::{Command, Stdio},
+  sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+  },
+  time::{Duration, Instant},
+};
 
 use serde::Deserialize;
 
@@ -6,13 +15,16 @@ use serde::Deserialize;
 pub(super) struct Update {
   task: Option<tokio::task::JoinHandle<Result<String, Error>>>,
   message: String,
+  cancelled: Arc<AtomicBool>,
 }
 
 impl Update {
   pub fn start(&mut self) {
     if self.task.is_none() {
       self.message = "Checking releases and installing an update if available...".into();
-      self.task = Some(tokio::task::spawn_blocking(run));
+      self.cancelled.store(false, Ordering::Relaxed);
+      let cancelled = self.cancelled.clone();
+      self.task = Some(tokio::task::spawn_blocking(move || run(&cancelled)));
     }
   }
 
@@ -30,6 +42,19 @@ impl Update {
 
   pub fn message(&self) -> &str {
     &self.message
+  }
+
+  pub async fn stop(&mut self) {
+    self.cancelled.store(true, Ordering::Relaxed);
+    if let Some(task) = self.task.take() {
+      let _ = task.await;
+    }
+  }
+}
+
+impl Drop for Update {
+  fn drop(&mut self) {
+    self.cancelled.store(true, Ordering::Relaxed);
   }
 }
 
@@ -77,33 +102,61 @@ fn latest(releases: impl IntoIterator<Item = Release>) -> Option<Release> {
     .max_by_key(|release| version(&release.tag_name))
 }
 
-fn download(url: &str, destination: &Path) -> Result<(), Error> {
-  let output = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" })
-    .args([
-      "--fail",
-      "--location",
-      "--silent",
-      "--show-error",
-      "--proto",
-      "=https",
-      "--proto-redir",
-      "=https",
-      "--tlsv1.2",
-      "--max-time",
-      "120",
-      "--output",
-    ])
-    .arg(destination)
-    .arg(url)
-    .output()
-    .map_err(|error| Error::Message(format!("cannot run curl: {error}")))?;
-  if !output.status.success() {
-    return Err(Error::Message(format!(
-      "download failed: {}",
-      String::from_utf8_lossy(&output.stderr).trim()
-    )));
+fn command(command: &mut Command, cancelled: &AtomicBool, limit: Duration) -> Result<(), Error> {
+  if cancelled.load(Ordering::Relaxed) {
+    return Err(Error::Message("cancelled".into()));
   }
-  Ok(())
+  let errors = tempfile::NamedTempFile::new()?;
+  let mut child = command.stdout(Stdio::null()).stderr(errors.reopen()?).spawn()?;
+  let deadline = Instant::now() + limit;
+  let result = loop {
+    if cancelled.load(Ordering::Relaxed) {
+      break Err(Error::Message("cancelled".into()));
+    }
+    if Instant::now() >= deadline {
+      break Err(Error::Message("command timed out".into()));
+    }
+    match child.try_wait() {
+      Ok(Some(status)) if status.success() => break Ok(()),
+      Ok(Some(_)) => {
+        break Err(Error::Message(format!(
+          "command failed: {}",
+          fs::read_to_string(errors.path())?.trim()
+        )));
+      }
+      Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+      Err(error) => break Err(error.into()),
+    }
+  };
+  if result.is_err() {
+    let _ = child.kill();
+    child.wait()?;
+  }
+  result
+}
+
+fn download(url: &str, destination: &Path, cancelled: &AtomicBool) -> Result<(), Error> {
+  command(
+    Command::new(if cfg!(windows) { "curl.exe" } else { "curl" })
+      .args([
+        "--fail",
+        "--location",
+        "--silent",
+        "--show-error",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        "--tlsv1.2",
+        "--max-time",
+        "120",
+        "--output",
+      ])
+      .arg(destination)
+      .arg(url),
+    cancelled,
+    Duration::from_secs(120),
+  )
 }
 
 fn verify(archive: &Path, checksums: &str, name: &str) -> Result<(), Error> {
@@ -161,7 +214,7 @@ fn install(source: &Path, _destination: &Path) -> Result<(), Error> {
   Ok(())
 }
 
-fn run() -> Result<String, Error> {
+fn run(cancelled: &AtomicBool) -> Result<String, Error> {
   let target = target(std::env::consts::OS, std::env::consts::ARCH)?;
   let temporary = tempfile::tempdir()?;
   let metadata = temporary.path().join("releases.json");
@@ -170,6 +223,7 @@ fn run() -> Result<String, Error> {
     download(
       &format!("https://aaronmallen.dev/api/v1/repos/aaron/tntop/releases?limit=50&page={page}"),
       &metadata,
+      cancelled,
     )?;
     let rows: Vec<Release> = serde_json::from_slice(&fs::read(&metadata)?)?;
     let done = rows.len() < 50;
@@ -203,28 +257,27 @@ fn run() -> Result<String, Error> {
   );
   let archive = temporary.path().join(&name);
   let checksums = temporary.path().join("SHA256SUMS");
-  download(&format!("{base}/{name}"), &archive)?;
-  download(&format!("{base}/SHA256SUMS"), &checksums)?;
+  download(&format!("{base}/{name}"), &archive, cancelled)?;
+  download(&format!("{base}/SHA256SUMS"), &checksums, cancelled)?;
   verify(&archive, &fs::read_to_string(checksums)?, &name)?;
   let executable = if cfg!(windows) { "tntop.exe" } else { "tntop" };
   let member = format!("{stem}/{executable}");
-  let output = Command::new("tar")
-    .arg("-xf")
-    .arg(&archive)
-    .arg("-C")
-    .arg(temporary.path())
-    .arg(&member)
-    .output()
-    .map_err(|error| Error::Message(format!("cannot run tar: {error}")))?;
-  if !output.status.success() {
-    return Err(Error::Message(format!(
-      "extraction failed: {}",
-      String::from_utf8_lossy(&output.stderr).trim()
-    )));
-  }
+  command(
+    Command::new("tar")
+      .arg("-xf")
+      .arg(&archive)
+      .arg("-C")
+      .arg(temporary.path())
+      .arg(&member),
+    cancelled,
+    Duration::from_secs(30),
+  )?;
   let binary = temporary.path().join(member);
   if !fs::symlink_metadata(&binary)?.file_type().is_file() {
     return Err(Error::Message("archive does not contain a regular executable".into()));
+  }
+  if cancelled.load(Ordering::Relaxed) {
+    return Err(Error::Message("cancelled".into()));
   }
   install(&binary, &std::env::current_exe()?)?;
   Ok(format!("Updated tntop from {installed} to {}.", release.tag_name))
@@ -233,6 +286,32 @@ fn run() -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[cfg(unix)]
+  #[test]
+  fn it_bounds_commands_and_reaps_them_on_timeout() {
+    let directory = tempfile::tempdir().unwrap();
+    let pid = directory.path().join("pid");
+    let mut process = Command::new("sh");
+    process
+      .arg("-c")
+      .arg("echo $$ > \"$1\"; exec sleep 30")
+      .arg("sh")
+      .arg(&pid);
+    let started = Instant::now();
+    let error = command(&mut process, &AtomicBool::new(false), Duration::from_millis(200)).unwrap_err();
+    assert!(error.to_string().contains("timed out"));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+      !Command::new("kill")
+        .arg("-0")
+        .arg(fs::read_to_string(pid).unwrap().trim())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+    );
+  }
 
   #[tokio::test]
   async fn it_keeps_one_update_running_and_reports_results_in_the_ui() {

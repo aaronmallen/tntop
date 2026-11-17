@@ -58,6 +58,10 @@ You must have write access to the executable's directory. The updater never asks
 for elevated access. On Windows, it arranges cleanup of the running executable
 after exit.
 
+Quitting or Ctrl-C cancels pending downloads and extraction, removes staged files,
+and leaves the installed binary intact. Extraction has a 30-second limit.
+Once final replacement starts, exit waits for that atomic step to finish.
+
 ## Connections
 
 Add a server using its HTTP or HTTPS origin, such as `https://nas.local` or
