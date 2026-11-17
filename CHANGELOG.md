@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 - Connection errors take priority over footer notices, and success notices expire.
 - The debug flag keeps trace logging enabled after UI startup and preference changes.
 - Custom theme names containing dots load from the theme picker.
+- Masked API keys support cursor movement, insertion, and deletion.
 
 ## [0.2.1] - 2026-11-16
 

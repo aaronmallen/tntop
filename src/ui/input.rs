@@ -1,7 +1,7 @@
 use ratatui::{Frame, crossterm::event::KeyCode, layout::Rect, text::Line, widgets::Paragraph};
 
 pub(super) struct Input {
-  pub value: String,
+  pub value: zeroize::Zeroizing<String>,
   cursor: usize,
 }
 
@@ -16,7 +16,7 @@ impl Input {
     let value = value.into();
     Self {
       cursor: value.len(),
-      value,
+      value: zeroize::Zeroizing::new(value),
     }
   }
 
@@ -67,6 +67,17 @@ impl Input {
       ));
     }
   }
+
+  pub fn draw_masked(&self, frame: &mut Frame, area: Rect) {
+    if area.is_empty() {
+      return;
+    }
+    let cursor = self.value[..self.cursor].chars().count();
+    let start = cursor.saturating_sub(area.width as usize - 1);
+    let length = (self.value.chars().count() - start).min(area.width as usize);
+    frame.render_widget(Paragraph::new("•".repeat(length)), area);
+    frame.set_cursor_position((area.x + (cursor - start) as u16, area.y));
+  }
 }
 
 #[cfg(test)]
@@ -81,9 +92,9 @@ mod tests {
     input.handle(KeyCode::Left);
     input.handle(KeyCode::Backspace);
     input.handle(KeyCode::Char('ß'));
-    assert_eq!(input.value, "aßé");
+    assert_eq!(input.value.as_str(), "aßé");
     input.handle(KeyCode::Delete);
-    assert_eq!(input.value, "aß");
+    assert_eq!(input.value.as_str(), "aß");
     input.handle(KeyCode::End);
     input.handle(KeyCode::Right);
     input.handle(KeyCode::Delete);
@@ -92,7 +103,7 @@ mod tests {
     input.handle(KeyCode::Left);
     input.handle(KeyCode::Backspace);
     input.handle(KeyCode::Char('界'));
-    assert_eq!(input.value, "界aß");
+    assert_eq!(input.value.as_str(), "界aß");
     assert_eq!(input.cursor, 3);
   }
 

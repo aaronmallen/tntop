@@ -7,7 +7,6 @@ use ratatui::{
   text::Line,
   widgets::{Clear, Paragraph, Wrap},
 };
-use zeroize::Zeroizing;
 
 use super::{Error, Session, Ui, input::Input, view::panel};
 use crate::{
@@ -19,7 +18,7 @@ use crate::{
 pub(super) enum Dialog {
   Add { field: usize, values: [Input; 3] },
   Delete,
-  Key { value: Zeroizing<String> },
+  Key { value: Input },
   Trust { fingerprint: String },
 }
 
@@ -63,14 +62,14 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       ],
     ),
     Some(Dialog::Key {
-      value,
+      ..
     }) => (
       " API key ",
       vec![
         format!("API key for {}", server.unwrap().name()),
         "Saves immediately to your system keyring.".into(),
         String::new(),
-        "•".repeat(value.chars().count()),
+        String::new(),
         String::new(),
         "Enter save / Esc cancel".into(),
       ],
@@ -138,6 +137,16 @@ pub(super) fn draw(frame: &mut Frame, ui: &Ui, settings: &Settings) {
       }
     }
   }
+  if let Some(Dialog::Key {
+    value,
+  }) = &ui.dialog
+    && area.height > 5
+  {
+    value.draw_masked(
+      frame,
+      Rect::new(area.x + 1, area.y + 4, area.width.saturating_sub(2), 1),
+    );
+  }
 }
 
 pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, key: KeyCode) -> Result<(), Error> {
@@ -203,17 +212,13 @@ pub(super) async fn handle(ui: &mut Ui, settings: &mut Settings, path: &Path, ke
     Some(Dialog::Key {
       value,
     }) => match key {
-      KeyCode::Backspace => {
-        value.pop();
-      }
-      KeyCode::Char(c) if !c.is_control() => value.push(c),
       KeyCode::Enter => {
-        credentials::save(&settings.servers()[ui.selected], value.clone()).await?;
+        credentials::save(&settings.servers()[ui.selected], value.value.clone()).await?;
         ui.sessions[ui.selected] = None;
         ui.dialog = None;
         open(ui, settings).await?;
       }
-      _ => {}
+      _ => value.handle(key),
     },
     Some(Dialog::Trust {
       fingerprint,
@@ -340,7 +345,7 @@ mod tests {
         },
         Dialog::Delete,
         Dialog::Key {
-          value: Zeroizing::new("never-show-this-secret".into()),
+          value: Input::new("never-show-this-secret"),
         },
         Dialog::Trust {
           fingerprint: "ab".repeat(32),
@@ -371,6 +376,56 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[tokio::test]
+    async fn it_edits_a_masked_key_without_saving_it() {
+      let mut ui = ui();
+      let mut settings = Settings::default();
+      settings
+        .servers_mut()
+        .push(Server::new("home".into(), "http://nas.local".parse().unwrap()).unwrap());
+      ui.dialog = Some(Dialog::Key {
+        value: Input::new("abc"),
+      });
+      for key in [
+        KeyCode::Left,
+        KeyCode::Char('X'),
+        KeyCode::Delete,
+        KeyCode::Home,
+        KeyCode::Delete,
+        KeyCode::End,
+        KeyCode::Backspace,
+      ] {
+        handle(&mut ui, &mut settings, Path::new("unused"), key).await.unwrap();
+      }
+      let Some(Dialog::Key {
+        value,
+      }) = &ui.dialog
+      else {
+        panic!("key dialog closed");
+      };
+      assert_eq!(value.value.as_str(), "b");
+      ui.dialog = Some(Dialog::Key {
+        value: Input::new("dummy-secret".repeat(30)),
+      });
+      let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+      terminal.draw(|frame| draw(frame, &ui, &settings)).unwrap();
+      let cursor = terminal.get_cursor_position().unwrap();
+      assert!(cursor.x > 2 && cursor.x < 37);
+      let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+      assert!(!text.contains("dummy-secret"));
+      assert!(text.contains("••••"));
+      handle(&mut ui, &mut settings, Path::new("unused"), KeyCode::Esc)
+        .await
+        .unwrap();
+      assert!(ui.dialog.is_none());
+    }
 
     #[tokio::test]
     async fn it_cancels_trust_without_changing_the_saved_fingerprint() {
@@ -483,8 +538,8 @@ mod tests {
         panic!("add dialog closed");
       };
       assert_eq!(*field, 0);
-      assert_eq!(values[0].value, "home");
-      assert_eq!(values[1].value, "Xhttp://nas.local");
+      assert_eq!(values[0].value.as_str(), "home");
+      assert_eq!(values[1].value.as_str(), "Xhttp://nas.local");
     }
   }
 }

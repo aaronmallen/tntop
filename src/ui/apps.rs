@@ -55,7 +55,7 @@ pub(super) fn edit_filter(ui: &mut Ui, key: KeyCode) -> bool {
   };
   match key {
     KeyCode::Esc => {}
-    KeyCode::Enter | KeyCode::Down => ui.filter = input.value,
+    KeyCode::Enter | KeyCode::Down => ui.filter = input.value.to_string(),
     _ => {
       input.handle(key);
       ui.filtering = Some(input);
