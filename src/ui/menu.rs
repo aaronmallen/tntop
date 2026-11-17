@@ -17,7 +17,7 @@ pub(super) enum Menu {
 }
 
 pub(super) fn handle(ui: &mut Ui, key: KeyCode) -> Option<bool> {
-  if ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering {
+  if ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering.is_some() {
     return None;
   }
   let close = match ui.menu {
@@ -255,7 +255,7 @@ mod tests {
     }
     assert_eq!(ui.menu, None);
     ui.dialog = None;
-    ui.filtering = true;
+    ui.filtering = Some(super::super::input::Input::default());
     assert_eq!(handle(&mut ui, KeyCode::Char('m')), None);
   }
 

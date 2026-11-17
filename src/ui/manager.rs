@@ -264,6 +264,7 @@ pub(super) async fn open(ui: &mut Ui, settings: &Settings) -> Result<(), Error> 
   ui.app_paused = None;
   ui.pool = None;
   ui.filter.clear();
+  ui.filtering = None;
   ui.message = None;
   ui.picker = false;
   Ok(())
@@ -287,7 +288,7 @@ mod tests {
       dialog: None,
       discovery: None,
       filter: String::new(),
-      filtering: false,
+      filtering: None,
       net_baselines: Default::default(),
       message: None,
       menu: None,

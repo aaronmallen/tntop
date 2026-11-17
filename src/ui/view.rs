@@ -504,7 +504,7 @@ mod tests {
       dialog: None,
       discovery: None,
       filter: String::new(),
-      filtering: false,
+      filtering: None,
       net_baselines: Default::default(),
       message: None,
       menu: None,
@@ -647,7 +647,7 @@ mod tests {
             KeyCode::Char('['),
             KeyCode::Char(']'),
             KeyCode::Enter,
-            KeyCode::Char(' '),
+            KeyCode::Char('u'),
           ] {
             assert!(controls.iter().any(|(_, code)| *code == key), "{key:?}");
           }

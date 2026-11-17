@@ -70,7 +70,7 @@ pub(super) enum Action {
 }
 
 pub(super) fn key(ui: &mut Ui, event: MouseEvent, disabled: bool) -> Option<KeyEvent> {
-  if disabled || ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering {
+  if disabled || ui.dialog.is_some() || ui.discovery.is_some() || ui.filtering.is_some() {
     return None;
   }
   if matches!(ui.menu, Some(Menu::Help(_))) && event.kind == MouseEventKind::Down(MouseButton::Left) {
@@ -106,6 +106,9 @@ pub(super) fn key(ui: &mut Ui, event: MouseEvent, disabled: bool) -> Option<KeyE
         KeyCode::Enter
       }
       Action::App(row) => {
+        if ui.app_row == row {
+          return Some(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        }
         ui.app_row = row;
         ui.app_selected = None;
         return None;
@@ -134,6 +137,23 @@ pub(super) fn rows(hits: &mut Vec<(Rect, Action)>, area: Rect, offset: usize, co
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn it_opens_details_only_when_clicking_the_selected_app() {
+    let mut ui = Ui::default();
+    rows(&mut ui.hits, Rect::new(0, 0, 20, 5), 0, 2, false);
+    let mut click = MouseEvent {
+      kind: MouseEventKind::Down(MouseButton::Left),
+      column: 1,
+      row: 1,
+      modifiers: KeyModifiers::NONE,
+    };
+    assert!(key(&mut ui, click, false).is_none());
+    assert_eq!(ui.app_row, 1);
+    assert_eq!(key(&mut ui, click, false).unwrap().code, KeyCode::Enter);
+    click.row = 4;
+    assert!(key(&mut ui, click, false).is_none());
+  }
 
   #[test]
   fn it_uses_visible_hits_and_respects_disabled_input_and_dialogs() {

@@ -119,9 +119,11 @@ Each panel category owns its display settings.
 | Apps | Up / Down | Select an app |
 | Apps | Page Up / Page Down, Home / End | Page, or select first / last |
 | Apps | Left / Right, r | Cycle sort field, or reverse order |
-| Apps | Enter, f, Space | Details, follow details, pause presentation |
-| Apps | /, Delete | Edit filter, or clear it outside text editing |
-| App filter | Backspace, Enter / Esc | Remove a letter, or finish editing |
+| Apps | Enter, F, u / Space | Details, follow details, pause presentation |
+| Apps | f / /, Delete | Edit filter, or clear it outside text editing |
+| Apps | c / % | Toggle per-core CPU / memory bytes |
+| Storage | i / d | Toggle I/O view / show storage |
+| App filter | Enter / Down, Esc | Accept edits, or restore the previous filter |
 | Servers | Up / Down, Enter | Select, then open a server |
 | Servers | a / d | Add / delete a server |
 | Servers | e / t | Change API key / review HTTPS certificate |
@@ -137,11 +139,11 @@ Each panel category owns its display settings.
 | Help | Up / Down, Page Up / Down, Home / End | Scroll |
 | Help | Esc / q / h / Enter / Space / Backspace, click | Close Help |
 
-Server and Options text fields support Left/Right, Home/End and
+Server, Options and app filter text fields support Left/Right, Home/End and
 Backspace/Delete. Typing inserts at the cursor; long fields scroll.
 Editors consume shortcuts before dashboard actions, so letters such as
-`q`, `f` and `h` remain text. The app filter accepts literal letters and
-Backspace; Enter/Esc leaves it.
+`q`, `f` and `h` remain text. App filtering updates live while typing;
+Enter or Down accepts it, and Escape restores the previous filter.
 
 Click Main choices, Options categories and settings, theme-preview
 controls, header preset arrows and panel-border controls. Hotkeys use a
@@ -324,12 +326,13 @@ share of host CPU; **CORE%** multiplies it by the current logical core
 count and may exceed 100. Graphs always show host capacity. Missing
 stats or core counts remain **N/A**.
 
-**Enter** opens/closes app details. **f** pins details to the selected app
+**Enter** opens/closes app details. Clicking the selected row does the same.
+**F** pins details to the selected app
 by name, even while you browse or filter the list. A missing app shows
-unavailable; another **f** unpins it. Details use the existing version,
+unavailable; another **F** unpins it. Details use the existing version,
 state, update, CPU, memory, network and disk-total readings.
 
-**Space** freezes only app presentation. Collection and the other panels
+**u** or **Space** freezes only app presentation. Collection and the other panels
 continue; press it again to show current data. Switching servers clears
 pause and follow. Use **Page Up/Down**, **Home/End** to navigate, and
 **Delete** outside text editing to clear the app filter.

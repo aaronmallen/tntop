@@ -13,41 +13,42 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   let inner = block.inner(area);
   frame.render_widget(block, area);
   let title_width = Line::from(title).width() as u16 + 1;
-  super::super::mouse::controls(
-    frame,
-    &mut ui.hits,
-    Rect::new(
-      area.x.saturating_add(title_width),
-      area.y,
-      area.width.saturating_sub(title_width + 1),
-      u16::from(area.height > 1),
-    ),
-    theme,
-    &[
-      ("", "←", "", KeyCode::Left),
-      ("", "→", settings.apps_sort(), KeyCode::Right),
-      (
-        "",
-        "/",
-        &format!(
-          " {}{}",
-          if ui.filter.is_empty() { "filter" } else { &ui.filter },
-          if ui.filtering { "▏" } else { "" }
-        ),
-        KeyCode::Char('/'),
-      ),
-      (
-        "",
-        "r",
-        if settings.apps_reversed() {
-          "everse on"
-        } else {
-          "everse"
-        },
-        KeyCode::Char('r'),
-      ),
-    ],
+  let header = Rect::new(
+    area.x.saturating_add(title_width),
+    area.y,
+    area.width.saturating_sub(title_width + 1),
+    u16::from(area.height > 1),
   );
+  if let Some(input) = &ui.filtering {
+    input.draw(frame, header, true);
+  } else {
+    super::super::mouse::controls(
+      frame,
+      &mut ui.hits,
+      header,
+      theme,
+      &[
+        ("", "←", "", KeyCode::Left),
+        ("", "→", settings.apps_sort(), KeyCode::Right),
+        (
+          "",
+          "/",
+          &format!(" {}", if ui.filter.is_empty() { "filter" } else { &ui.filter }),
+          KeyCode::Char('/'),
+        ),
+        (
+          "",
+          "r",
+          if settings.apps_reversed() {
+            "everse on"
+          } else {
+            "everse"
+          },
+          KeyCode::Char('r'),
+        ),
+      ],
+    );
+  }
   super::super::mouse::controls(
     frame,
     &mut ui.hits,
@@ -67,16 +68,18 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       ),
       (
         "",
-        "f",
+        "F",
         if ui.app_follow.is_some() { "ollow on" } else { "ollow" },
-        KeyCode::Char('f'),
+        KeyCode::Char('F'),
       ),
       (
         "",
-        "space",
+        "u",
         if ui.app_paused.is_some() { " resume" } else { " pause" },
-        KeyCode::Char(' '),
+        KeyCode::Char('u'),
       ),
+      ("", "c", " per-core", KeyCode::Char('c')),
+      ("", "%", " memory", KeyCode::Char('%')),
     ],
   );
   let Some(all_apps) = state.apps() else {
@@ -96,7 +99,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   .areas(inner);
   ui.app_page = table_area.height.saturating_sub(1).max(1) as usize;
   let stats = state.app_history().back();
-  let apps = super::super::apps::ordered(state, &ui.filter, settings);
+  let apps = super::super::apps::ordered(state, super::super::apps::filter(ui), settings);
   if let Some(selected) = &ui.app_selected {
     if let Some(index) = apps.iter().position(|app| app.name() == selected) {
       ui.app_row = index;
@@ -326,6 +329,28 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn it_keeps_the_filter_cursor_inside_a_narrow_header() {
+    let state = crate::client::fixtures::state();
+    let mut ui = Ui::default();
+    ui.filtering = Some(super::super::super::input::Input::new("a long filter containing 界"));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(32, 12)).unwrap();
+    terminal
+      .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &Settings::default()))
+      .unwrap();
+    let cursor = terminal.get_cursor_position().unwrap();
+    assert!(cursor.x >= 8 && cursor.x < 31);
+    assert_eq!(cursor.y, 0);
+    assert!(
+      terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .any(|cell| cell.symbol() == "界")
+    );
+  }
+
   use serde_json::json;
 
   #[test]

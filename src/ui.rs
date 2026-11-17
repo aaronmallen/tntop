@@ -71,7 +71,7 @@ struct Ui {
   dialog: Option<manager::Dialog>,
   discovery: Option<tokio::task::JoinHandle<Result<String, client::Error>>>,
   filter: String,
-  filtering: bool,
+  filtering: Option<input::Input>,
   net_baselines: std::collections::HashMap<(usize, String), (f64, f64)>,
   message: Option<String>,
   menu: Option<menu::Menu>,
@@ -124,7 +124,7 @@ pub async fn run(
     dialog: None,
     discovery: None,
     filter: String::new(),
-    filtering: false,
+    filtering: None,
     net_baselines: Default::default(),
     message: None,
     menu: None,
@@ -268,16 +268,7 @@ async fn run_terminal(
         }
         continue;
       }
-      if ui.filtering {
-        match key.code {
-          KeyCode::Esc | KeyCode::Enter => ui.filtering = false,
-          KeyCode::Backspace => {
-            ui.filter.pop();
-          }
-          KeyCode::Char(c) => ui.filter.push(c),
-          _ => {}
-        }
-        ui.app_row = 0;
+      if apps::edit_filter(ui, key.code) {
         continue;
       }
       let key = ratatui::crossterm::event::KeyEvent {
@@ -363,7 +354,6 @@ async fn run_terminal(
           });
         }
         KeyCode::Char('t') if ui.picker && !settings.servers().is_empty() => manager::discover(ui, settings),
-        KeyCode::Char('/') if !ui.picker => ui.filtering = true,
         KeyCode::Char(']') if !ui.picker => storage::cycle(ui, settings, false),
         KeyCode::Char('[') if !ui.picker => storage::cycle(ui, settings, true),
         _ => {}
@@ -388,7 +378,7 @@ fn draw(terminal: &mut ratatui::DefaultTerminal, ui: &mut Ui, settings: &Setting
 fn navigation(ui: &Ui, settings: &Settings, key: KeyCode) -> KeyCode {
   if !settings.vim_keys()
     || ui.dialog.is_some()
-    || ui.filtering
+    || ui.filtering.is_some()
     || (matches!(ui.menu, Some(menu::Menu::Help(_))) && key == KeyCode::Char('h'))
     || (ui.menu == Some(menu::Menu::Options) && ui.options.editing_text())
   {
@@ -442,9 +432,9 @@ mod tests {
       let help = navigation(&ui, &settings, KeyCode::Char('H'));
       menu::handle(&mut ui, help);
       assert_eq!(ui.menu, Some(menu::Menu::Help(0)));
-      ui.filtering = true;
+      ui.filtering = Some(input::Input::default());
       assert_eq!(navigation(&ui, &settings, KeyCode::Char('j')), KeyCode::Char('j'));
-      ui.filtering = false;
+      ui.filtering = None;
       ui.dialog = Some(manager::Dialog::Key {
         value: Default::default(),
       });
