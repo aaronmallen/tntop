@@ -99,7 +99,6 @@ impl Theme {
       return Ok(theme);
     }
     if path.components().count() == 1
-      && path.extension().is_none()
       && let Some(name) = path.to_str()
     {
       match std::fs::read_to_string(directory.join("themes").join(format!("{name}.theme"))) {
@@ -377,8 +376,27 @@ mod tests {
       .unwrap();
       std::fs::write(directory.path().join("themes/Default.theme"), "invalid").unwrap();
       std::fs::write(directory.path().join("themes/TTY.theme"), "invalid").unwrap();
+      std::fs::write(
+        directory.path().join("themes/my.dark.theme"),
+        "theme[main_bg]=\"#070809\"",
+      )
+      .unwrap();
       let names = Theme::names(&config).unwrap();
-      assert_eq!(names.len(), 52);
+      assert_eq!(names.len(), 53);
+      assert!(names.iter().any(|name| name == "my.dark"));
+      assert_eq!(
+        Theme::load(Some(Path::new("my.dark")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(7, 8, 9)
+      );
+      std::fs::write(directory.path().join("explicit.theme"), "theme[main_bg]=\"#010203\"").unwrap();
+      assert_eq!(
+        Theme::load(Some(Path::new("explicit.theme")), &config)
+          .unwrap()
+          .color("main_bg"),
+        Color::Rgb(1, 2, 3)
+      );
       assert!(Theme::load(Some(Path::new("TTY")), &config).unwrap().is_tty());
       assert_eq!(names.iter().filter(|name| *name == "dracula").count(), 1);
       assert_eq!(
