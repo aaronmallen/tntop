@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::ExitCode};
 use clap::Parser;
 use getset::{CopyGetters, Getters};
 
-use crate::{config::Settings, logger::Logger, ui::Banner};
+use crate::{logger::Logger, ui::Banner};
 
 #[derive(CopyGetters, Debug, Getters, Parser)]
 #[clap(about, before_help = Banner::new().with_author().with_version().to_string(), disable_version_flag = true, name = "tntop")]
@@ -26,36 +26,6 @@ pub struct App {
   /// Start with a configured preset number
   #[arg(long)]
   preset: Option<usize>,
-}
-
-impl App {
-  pub async fn call(&self, context: Context) -> Result<()> {
-    crate::ui::run(
-      context.settings(),
-      context.config_path(),
-      self.server.as_deref(),
-      self.preset,
-    )
-    .await?;
-    Ok(())
-  }
-}
-
-#[derive(Clone, Debug, Getters)]
-pub struct Context {
-  #[get = "pub"]
-  config_path: PathBuf,
-  #[get = "pub"]
-  settings: Settings,
-}
-
-impl Context {
-  pub fn new(config_path: PathBuf, settings: Settings) -> Self {
-    Self {
-      config_path,
-      settings,
-    }
-  }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -115,9 +85,8 @@ pub async fn run() -> Result<()> {
 
   let settings = crate::config::load(config_path)?;
 
-  let context = Context::new(config_path.clone(), settings);
-
-  app.call(context).await
+  crate::ui::run(&settings, config_path, app.server.as_deref(), app.preset).await?;
+  Ok(())
 }
 
 #[cfg(test)]
