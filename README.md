@@ -302,12 +302,15 @@ read/write rates and IOPS always describe **all disks**.
 ## Network
 
 Set a **Preferred interface** or use **b/n** to cycle and save one.
-If it is absent on another server, tntop uses an up interface, then the
-first available, while keeping your preference.
+If it is absent on another server, tntop prefers an up interface with the
+most estimated session traffic, while keeping your preference. Ties use
+interface name order.
 
 **a** toggles automatic/fixed scaling; **y** gives both directions the
-larger scale. Set fixed maxima in bytes/s in Network Options. Swap graph
-positions or enable bitrate units there. Bitrates use decimal or binary
+larger scale. Automatic scales use recent traffic, headroom and thresholds
+so old bursts do not flatten later traffic. Set fixed maxima in bytes/s in
+Network Options. Swap graph positions and their matching readings, or
+enable bitrate units there. Bitrates use decimal or binary
 units from General Options; totals stay in bytes.
 
 **z** sets a local baseline for the current server/interface. Press it

@@ -67,3 +67,11 @@ pub(crate) fn with_metrics(metrics: Metrics) -> State {
   state.record_metrics(metrics, Instant::now(), None);
   state
 }
+
+pub(crate) fn with_samples(samples: Vec<Metrics>) -> State {
+  let mut state = State::default();
+  for sample in samples {
+    state.record_metrics(sample, Instant::now(), Some(Duration::from_secs(2)));
+  }
+  state
+}

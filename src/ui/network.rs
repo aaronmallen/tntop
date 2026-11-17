@@ -24,7 +24,21 @@ pub(super) fn selected<'a>(state: &'a State, settings: &Settings) -> Option<&'a 
     .iter()
     .copied()
     .find(|name| *name == settings.net_iface())
-    .or_else(|| names.first().copied())
+    .or_else(|| {
+      let sample = state.history().back()?;
+      names.iter().copied().max_by(|a, b| {
+        let total = |name: &str| {
+          state
+            .network_totals()
+            .get(name)
+            .map_or(0.0, |totals| totals.downloaded() + totals.uploaded())
+        };
+        (sample.interfaces()[*a].link_state() == "LINK_STATE_UP")
+          .cmp(&(sample.interfaces()[*b].link_state() == "LINK_STATE_UP"))
+          .then_with(|| total(a).total_cmp(&total(b)))
+          .then_with(|| b.cmp(a))
+      })
+    })
 }
 
 pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Path, key: KeyCode) -> bool {
@@ -75,12 +89,12 @@ pub(super) fn handle(ui: &mut Ui, settings: &mut Settings, path: &std::path::Pat
 
 pub(super) fn scales(down: &[f64], up: &[f64], settings: &Settings) -> (f64, f64) {
   let mut down = if settings.net_auto() {
-    down.iter().copied().fold(1024.0, f64::max)
+    auto_scale(down)
   } else {
     settings.net_download() as f64
   };
   let mut up = if settings.net_auto() {
-    up.iter().copied().fold(1024.0, f64::max)
+    auto_scale(up)
   } else {
     settings.net_upload() as f64
   };
@@ -91,11 +105,69 @@ pub(super) fn scales(down: &[f64], up: &[f64], settings: &Settings) -> (f64, f64
   (down, up)
 }
 
+fn auto_scale(values: &[f64]) -> f64 {
+  let mut maximum = 10240.0;
+  let mut above = 0u8;
+  let mut below = 0u8;
+  let mut first = true;
+  for (index, &value) in values.iter().enumerate() {
+    if !value.is_finite() || value < 0.0 {
+      continue;
+    }
+    if value > maximum {
+      above += 1;
+      below = below.saturating_sub(1);
+    } else if maximum > 10240.0 && value < maximum / 10.0 {
+      below += 1;
+      above = above.saturating_sub(1);
+    }
+    if first || above >= 5 || below >= 5 {
+      let recent = &values[index.saturating_sub(4)..=index];
+      let (sum, count) = recent
+        .iter()
+        .filter(|value| value.is_finite() && **value >= 0.0)
+        .fold((0.0, 0), |(sum, count), value| (sum + value, count + 1));
+      maximum = (sum / count as f64 * if below >= 5 { 3.0 } else { 1.3 }).max(10240.0);
+      above = 0;
+      below = 0;
+      first = false;
+    }
+  }
+  maximum
+}
+
 #[cfg(test)]
 mod tests {
   use serde_json::json;
 
   use super::*;
+
+  #[test]
+  fn it_prefers_connected_traffic_and_honors_explicit_interfaces() {
+    let sample = |a: f64, z: f64, z_up: bool| {
+      serde_json::from_value(json!({
+        "cpu":{"cpu":{"usage":0}},
+        "interfaces":{
+          "a":{"link_state":"LINK_STATE_UP","received_bytes_rate":a},
+          "z":{"link_state":if z_up { "LINK_STATE_UP" } else { "LINK_STATE_DOWN" },"received_bytes_rate":z}
+        },
+        "memory":{"physical_memory_total":1000,"physical_memory_available":500,"arc_size":100}
+      }))
+      .unwrap()
+    };
+    let settings = Settings::default();
+    let state = crate::client::fixtures::with_samples(vec![sample(100.0, 1000.0, true), sample(100.0, 1000.0, true)]);
+    assert_eq!(selected(&state, &settings), Some("z"));
+    let explicit = settings.with_preference("net_iface", json!("a")).unwrap();
+    assert_eq!(selected(&state, &explicit), Some("a"));
+    let settings = explicit.with_preference("net_iface", json!("missing")).unwrap();
+    assert_eq!(selected(&state, &settings), Some("z"));
+    let down = crate::client::fixtures::with_samples(vec![sample(100.0, 1000.0, false); 2]);
+    assert_eq!(selected(&down, &settings), Some("a"));
+    let tied = crate::client::fixtures::with_samples(vec![sample(100.0, 100.0, true); 2]);
+    assert_eq!(selected(&tied, &settings), Some("a"));
+    assert_eq!(selected(&State::default(), &settings), None);
+  }
 
   mod handle {
     use super::*;
@@ -155,9 +227,9 @@ mod tests {
     #[test]
     fn it_uses_fixed_auto_and_shared_maxima_and_ignores_missing_samples() {
       let mut settings = Settings::default();
-      assert_eq!(scales(&[5000.0, f64::NAN], &[2000.0], &settings), (5000.0, 2000.0));
+      assert_eq!(scales(&[5000.0, f64::NAN], &[2000.0], &settings), (10240.0, 10240.0));
       settings = settings.with_preference("net_sync", json!(true)).unwrap();
-      assert_eq!(scales(&[5000.0], &[2000.0], &settings), (5000.0, 5000.0));
+      assert_eq!(scales(&[5000.0], &[2000.0], &settings), (10240.0, 10240.0));
       settings = settings
         .with_preference("net_auto", json!(false))
         .unwrap()
@@ -169,6 +241,25 @@ mod tests {
       settings = settings.with_preference("net_sync", json!(false)).unwrap();
       assert_eq!(scales(&[], &[], &settings), (1000.0, 2000.0));
       assert!(settings.with_preference("net_download", json!(0)).is_err());
+    }
+
+    #[test]
+    fn it_recovers_from_bursts_without_rescaling_on_each_small_change() {
+      let settings = Settings::default();
+      let mut rates = vec![1000000.0];
+      let initial = scales(&rates, &[], &settings).0;
+      assert_eq!(initial, 1300000.0);
+      rates.extend([1000.0; 4]);
+      assert_eq!(scales(&rates, &[], &settings).0, initial);
+      rates.push(1000.0);
+      assert_eq!(scales(&rates, &[], &settings).0, 10240.0);
+      rates.extend([20000.0; 4]);
+      assert_eq!(scales(&rates, &[], &settings).0, 10240.0);
+      rates.push(20000.0);
+      assert_eq!(scales(&rates, &[], &settings).0, 26000.0);
+      assert_eq!(scales(&[1000.0], &[], &settings).0, 10240.0);
+      let synced = settings.with_preference("net_sync", json!(true)).unwrap();
+      assert_eq!(scales(&rates, &[50000.0], &synced), (65000.0, 65000.0));
     }
   }
 }

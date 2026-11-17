@@ -111,13 +111,31 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   if download.height > 0 {
     frame.render_widget(
       Paragraph::new(format!("↓ {}", rate(max_down))).style(Style::default().fg(theme.color("graph_text"))),
-      Rect::new(download.x, download.y, download.width, 1),
+      Rect::new(
+        download.x,
+        if settings.net_swap() {
+          download.bottom() - 1
+        } else {
+          download.y
+        },
+        download.width,
+        1,
+      ),
     );
   }
   if upload.height > 0 {
     frame.render_widget(
       Paragraph::new(format!("↑ {}", rate(max_up))).style(Style::default().fg(theme.color("graph_text"))),
-      Rect::new(upload.x, upload.bottom() - 1, upload.width, 1),
+      Rect::new(
+        upload.x,
+        if settings.net_swap() {
+          upload.y
+        } else {
+          upload.bottom() - 1
+        },
+        upload.width,
+        1,
+      ),
     );
   }
   let totals = state.network_totals().get(name).cloned().unwrap_or_default();
@@ -131,7 +149,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     .filter(|speed| *speed > 0.0)
     .map(|speed| format!("{speed:.0} Mb/s"))
     .unwrap_or_else(|| "speed N/A".into());
-  let lines = vec![
+  let mut lines = vec![
     Line::styled(
       format!(
         " {} | {speed}",
@@ -158,6 +176,9 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     Line::from(format!(" Peak {}", rate(totals.peak_upload()))),
     Line::from(format!(" {total_label}{}", bytes(uploaded))),
   ];
+  if settings.net_swap() {
+    lines[1..].rotate_left(4);
+  }
   if stats.height >= 9 {
     let centered = Rect::new(stats.x, stats.y + (stats.height - 9) / 2, stats.width, 9);
     frame.render_widget(Paragraph::new(lines), centered);
@@ -166,7 +187,11 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       Paragraph::new(vec![
         lines[2].clone(),
         lines[6].clone(),
-        Line::from(format!(" {total_label}{} / {}", bytes(downloaded), bytes(uploaded))),
+        Line::from(if settings.net_swap() {
+          format!(" {total_label}{} / {}", bytes(uploaded), bytes(downloaded))
+        } else {
+          format!(" {total_label}{} / {}", bytes(downloaded), bytes(uploaded))
+        }),
         lines[0].clone(),
       ]),
       stats,
@@ -193,7 +218,7 @@ mod tests {
     let state = crate::client::fixtures::state();
     let mut ui = Ui::default();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
-    for swap in [false, true] {
+    for swap in [false, true, false] {
       let settings = Settings::default().with_preference("net_swap", json!(swap)).unwrap();
       terminal
         .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
@@ -209,6 +234,16 @@ mod tests {
       assert!(text.contains("Session ~"));
       assert!(text.contains("auto"));
       assert!(text.contains("sync off"));
+      let buffer = terminal.backend().buffer();
+      let arrow_rows: Vec<_> = (0..buffer.area.height)
+        .filter_map(|y| {
+          let row: String = (91..119).map(|x| buffer[(x, y)].symbol()).collect();
+          (row.contains('▼') || row.contains('▲')).then_some(row)
+        })
+        .collect();
+      assert_eq!(arrow_rows.len(), 2);
+      assert!(arrow_rows[0].contains(if swap { '▲' } else { '▼' }));
+      assert!(arrow_rows[1].contains(if swap { '▼' } else { '▲' }));
     }
     let totals = &state.network_totals()["enp1s0"];
     ui.net_baselines
