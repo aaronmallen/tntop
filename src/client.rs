@@ -25,7 +25,7 @@ use crate::config::Server;
 
 pub struct Client {
   id: u64,
-  pending: VecDeque<Value>,
+  pending: VecDeque<(Value, Instant)>,
   socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
@@ -61,56 +61,65 @@ impl Client {
 
   async fn call(&mut self, method: &str, params: Value) -> Result<Value, Error> {
     timeout(Duration::from_secs(15), async {
-      self.id += 1;
-      let id = self.id;
-      self
-        .socket
-        .send(Message::Text(
-          json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
-            .to_string()
-            .into(),
-        ))
-        .await?;
+      let id = self.request(method, params).await?;
       loop {
-        let message = self.receive().await?;
+        let (message, received) = self.receive().await?;
         if message["id"].as_u64() == Some(id) {
-          if let Some(error) = message.get("error") {
-            return Err(Error::Rpc {
-              method: method.into(),
-              code: error["code"].as_i64().unwrap_or_default(),
-            });
-          }
-          return message
-            .get("result")
-            .cloned()
-            .ok_or_else(|| Error::Protocol("missing RPC result".into()));
+          return rpc_result(message, method);
         }
         if self.pending.len() == 64 {
           self.pending.pop_front();
         }
-        self.pending.push_back(message);
+        self.pending.push_back((message, received));
       }
     })
     .await?
   }
 
-  async fn next(&mut self) -> Result<Value, Error> {
+  async fn next(&mut self) -> Result<(Value, Instant), Error> {
     if let Some(message) = self.pending.pop_front() {
       return Ok(message);
     }
     self.receive().await
   }
 
-  async fn receive(&mut self) -> Result<Value, Error> {
+  async fn receive(&mut self) -> Result<(Value, Instant), Error> {
     loop {
       match self.socket.next().await.ok_or(Error::Closed)?? {
-        Message::Text(text) => return Ok(serde_json::from_str(&text)?),
+        Message::Text(text) => return Ok((serde_json::from_str(&text)?, Instant::now())),
         Message::Ping(payload) => self.socket.send(Message::Pong(payload)).await?,
         Message::Close(_) => return Err(Error::Closed),
         _ => {}
       }
     }
   }
+
+  async fn request(&mut self, method: &str, params: Value) -> Result<u64, Error> {
+    self.id += 1;
+    timeout(
+      Duration::from_secs(15),
+      self.socket.send(Message::Text(
+        json!({"jsonrpc":"2.0","id":self.id,"method":method,"params":params})
+          .to_string()
+          .into(),
+      )),
+    )
+    .await??;
+    Ok(self.id)
+  }
+}
+
+fn rpc_result(message: Value, method: &str) -> Result<Value, Error> {
+  if let Some(error) = message.get("error") {
+    return Err(Error::Rpc {
+      method: method.into(),
+      code: error["code"].as_i64().unwrap_or_default(),
+    });
+  }
+  message
+    .get("result")
+    .cloned()
+    .ok_or_else(|| Error::Protocol("missing RPC result".into()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -285,39 +294,58 @@ async fn monitor(
   refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
   let mut last_sample = Instant::now();
   let mut previous_sample = None;
+  let mut requests = BTreeMap::<u64, (&str, Instant)>::new();
   loop {
+    let deadline = requests
+      .values()
+      .map(|(_, deadline)| *deadline)
+      .min()
+      .unwrap_or_else(|| Instant::now() + Duration::from_secs(15));
     tokio::select! {
       _ = sender.closed() => return Ok(()),
       _ = retry_subscription.tick() => {
-        if !app_subscribed {
-          match client.call("core.subscribe", json!([app_collection])).await {
-            Ok(_) => { app_subscribed = true; state.app_stats_error = None; }
-            Err(error) => state.app_stats_error = Some(error.to_string()),
-          }
+        if !app_subscribed && !requests.values().any(|(method, _)| *method == "app.stats") {
+          let id = client.request("core.subscribe", json!([app_collection])).await?;
+          requests.insert(id, ("app.stats", Instant::now() + Duration::from_secs(15)));
         }
-        sender.send_replace(state.clone());
       }
       _ = refresh.tick() => {
-        match client.call("system.info", json!([])).await.and_then(|value| server.api_version().system_info(value)) {
-          Ok(info) => {
-            state.system_info = Some(info);
-            state.system_error = None;
-            state.system_updated_at = Some(Instant::now());
+        for method in ["system.info", "app.query"] {
+          if !requests.values().any(|(pending, _)| *pending == method) {
+            let id = client.request(method, json!([])).await?;
+            requests.insert(id, (method, Instant::now() + Duration::from_secs(15)));
           }
-          Err(error) => state.system_error = Some(error.to_string()),
         }
-        match client.call("app.query", json!([])).await.and_then(|value| server.api_version().apps(value)) {
-          Ok(apps) => {
-            state.apps = Some(apps);
-            state.apps_error = None;
-            state.apps_updated_at = Some(Instant::now());
-          }
-          Err(error) => state.apps_error = Some(error.to_string()),
-        }
-        sender.send_replace(state.clone());
       }
       message = client.next() => {
-        let message = message?;
+        let (message, received) = message?;
+        if let Some((method, _)) = message["id"].as_u64().and_then(|id| requests.remove(&id)) {
+          let result = rpc_result(message, if method == "app.stats" { "core.subscribe" } else { method });
+          match method {
+            "system.info" => match result.and_then(|value| server.api_version().system_info(value)) {
+              Ok(info) => {
+                state.system_info = Some(info);
+                state.system_error = None;
+                state.system_updated_at = Some(received);
+              }
+              Err(error) => state.system_error = Some(error.to_string()),
+            },
+            "app.query" => match result.and_then(|value| server.api_version().apps(value)) {
+              Ok(apps) => {
+                state.apps = Some(apps);
+                state.apps_error = None;
+                state.apps_updated_at = Some(received);
+              }
+              Err(error) => state.apps_error = Some(error.to_string()),
+            },
+            _ => match result {
+              Ok(_) => { app_subscribed = true; state.app_stats_error = None; }
+              Err(error) => state.app_stats_error = Some(error.to_string()),
+            },
+          }
+          sender.send_replace(state.clone());
+          continue;
+        }
         let name = message["params"]["collection"].as_str().unwrap_or("");
         if message["method"] == "notify_unsubscribed" {
           if name == app_collection || name == "app.stats" {
@@ -332,7 +360,7 @@ async fn monitor(
           && (name == collection || name == "reporting.realtime")
         {
           let metrics = server.api_version().metrics(message["params"]["fields"].clone())?;
-          last_sample = Instant::now();
+          last_sample = received;
           state.record_metrics(metrics, last_sample, previous_sample.map(|previous| last_sample.duration_since(previous)));
           previous_sample = Some(last_sample);
           sender.send_replace(state.clone());
@@ -341,13 +369,26 @@ async fn monitor(
             Ok(stats) => {
               if state.app_history.len() == 120 { state.app_history.pop_front(); }
               state.app_history.push_back(Arc::new(stats));
-              state.app_stats_updated_at = Some(Instant::now());
+              state.app_stats_updated_at = Some(received);
               state.app_stats_error = None;
             }
             Err(error) => state.app_stats_error = Some(error.to_string()),
           }
           sender.send_replace(state.clone());
         }
+      }
+      _ = tokio::time::sleep_until(deadline.into()), if !requests.is_empty() => {
+        requests.retain(|_, (method, deadline)| {
+          if *deadline > Instant::now() { return true; }
+          let error = Some(format!("{method} did not respond in time"));
+          match *method {
+            "system.info" => state.system_error = error,
+            "app.query" => state.apps_error = error,
+            _ => state.app_stats_error = error,
+          }
+          false
+        });
+        sender.send_replace(state.clone());
       }
       _ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_sample + Duration::from_secs((interval * 3).max(20)))) => {
         return Err(Error::Protocol("metrics feed stalled; reconnecting".into()));
@@ -509,7 +550,7 @@ mod tests {
           socket,
         };
         assert_eq!(client.call("app.query", json!([])).await.unwrap(), json!([]));
-        assert_eq!(client.next().await.unwrap()["method"], "collection_update");
+        assert_eq!(client.next().await.unwrap().0["method"], "collection_update");
         let error = client.call("app.query", json!([])).await.unwrap_err();
         assert!(error.to_string().contains("-32001"));
         assert!(!error.to_string().contains("sensitive-server-detail"));
@@ -627,6 +668,78 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[tokio::test]
+    async fn it_collects_while_optional_replies_wait_and_expire() {
+      let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+      let address = listener.local_addr().unwrap();
+      let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+        for result in [json!(true), json!("TrueNAS-25.10.8"), json!(true)] {
+          let request: Value = serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+          socket
+            .send(Message::Text(
+              json!({"id":request["id"],"result":result}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+        }
+        for _ in 0..3 {
+          let request: Value = serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+          assert!(matches!(
+            request["method"].as_str(),
+            Some("system.info" | "app.query" | "core.subscribe")
+          ));
+        }
+        for rate in [100, 200, 300] {
+          let fields = json!({
+            "cpu":{"cpu":{"usage":25}},
+            "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":200},
+            "interfaces":{"eth0":{"link_state":"LINK_STATE_UP","received_bytes_rate":rate,"sent_bytes_rate":50}}
+          });
+          socket
+            .send(Message::Text(
+              json!({"method":"collection_update",
+            "params":{"collection":"reporting.realtime","fields":fields}})
+              .to_string()
+              .into(),
+            ))
+            .await
+            .unwrap();
+          tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        while let Some(Ok(_)) = socket.next().await {}
+      });
+      let server = Server::new("test".into(), format!("http://{address}").parse().unwrap()).unwrap();
+      let (mut receiver, _interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 2000);
+      timeout(Duration::from_secs(5), async {
+        while receiver.borrow().history().len() < 3 {
+          receiver.changed().await.unwrap();
+        }
+      })
+      .await
+      .unwrap();
+      {
+        let state = receiver.borrow();
+        assert!(state.system_info().is_none());
+        assert!(state.error().is_none());
+        assert!(state.network_totals()["eth0"].downloaded() >= 45.0);
+        assert!(state.network_totals()["eth0"].downloaded() < 500.0);
+      }
+      timeout(Duration::from_secs(17), async {
+        while receiver.borrow().system_error().is_none() || receiver.borrow().apps_error().is_none() {
+          receiver.changed().await.unwrap();
+        }
+      })
+      .await
+      .unwrap();
+      assert!(receiver.borrow().error().is_none());
+      assert_eq!(receiver.borrow().history().len(), 3);
+      drop(receiver);
+      timeout(Duration::from_secs(2), task).await.unwrap().unwrap();
+      timeout(Duration::from_secs(2), peer).await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn it_changes_live_intervals_without_losing_history_or_leaving_a_collector() {

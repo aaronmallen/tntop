@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 - Network arrows follow graph orientation when swapped and restored.
 - Missing pool measurements show N/A without stopping other metrics.
+- Slow optional API replies no longer hold up live metrics or distort sample timing.
 
 ## [0.2.1] - 2026-11-16
 
