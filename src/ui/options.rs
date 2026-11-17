@@ -212,7 +212,7 @@ fn rows(category: usize) -> Vec<OptionRow> {
           OptionRow { key: "net_sync", label: "Sync scales", description: "Use the larger download/upload maximum for both graphs. The y key toggles this in either automatic or fixed mode." },
           OptionRow { key: "net_download", label: "Download scale (bytes/s)", description: "Positive fixed maximum in bytes per second. Used when automatic scaling is off." },
           OptionRow { key: "net_upload", label: "Upload scale (bytes/s)", description: "Positive fixed maximum in bytes per second. Used when automatic scaling is off." },
-          OptionRow { key: "net_swap", label: "Swap graph positions", description: "Show upload above download. Direction labels, gradients, rates and counters retain their meaning." },
+          OptionRow { key: "net_swap", label: "Swap graph positions", description: "Show upload above download. Arrows follow graph orientation; labels, gradients, rates and counters stay with their traffic." },
           OptionRow { key: "net_bitrate", label: "Bitrate units", description: "Show rates in bits per second, using the General base-10/binary preference. Session estimates stay in bytes. z toggles a local reset baseline for this server/interface." },
         ]);
       }

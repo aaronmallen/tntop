@@ -320,7 +320,9 @@ interface name order.
 larger scale. Automatic scales use recent traffic, headroom and thresholds
 so old bursts do not flatten later traffic. Set fixed maxima in bytes/s in
 Network Options. Swap graph positions and their matching readings, or
-enable bitrate units there. Bitrates use decimal or binary
+enable bitrate units there. Arrows point up for the upper graph and down
+for the lower graph, and reverse with each traffic label when swapped.
+Bitrates use decimal or binary
 units from General Options; totals stay in bytes.
 
 **z** sets a local baseline for the current server/interface. Press it

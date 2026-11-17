@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 ## [Unreleased]
 
+### Fixed
+
+- Network arrows follow graph orientation when swapped and restored.
+
 ## [0.2.1] - 2026-11-16
 
 ### Fixed

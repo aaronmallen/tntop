@@ -77,6 +77,11 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     (download, upload)
   };
   let (max_down, max_up) = super::super::network::scales(&down, &up, settings);
+  let (down_arrow, up_arrow) = if settings.net_swap() {
+    ('▼', '▲')
+  } else {
+    ('▲', '▼')
+  };
   frame.render_widget(
     Graph {
       values: &down,
@@ -103,7 +108,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
     Paragraph::new(if settings.net_swap() {
       "▲ upload / download ▼"
     } else {
-      "▼ download / upload ▲"
+      "▲ download / upload ▼"
     })
     .alignment(Alignment::Center)
     .style(Style::default().fg(theme.color("graph_text"))),
@@ -111,7 +116,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   );
   if download.height > 0 {
     frame.render_widget(
-      Paragraph::new(format!("↓ {}", rate(max_down))).style(Style::default().fg(theme.color("graph_text"))),
+      Paragraph::new(format!("{down_arrow} {}", rate(max_down))).style(Style::default().fg(theme.color("graph_text"))),
       Rect::new(
         download.x,
         if settings.net_swap() {
@@ -126,7 +131,7 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
   }
   if upload.height > 0 {
     frame.render_widget(
-      Paragraph::new(format!("↑ {}", rate(max_up))).style(Style::default().fg(theme.color("graph_text"))),
+      Paragraph::new(format!("{up_arrow} {}", rate(max_up))).style(Style::default().fg(theme.color("graph_text"))),
       Rect::new(
         upload.x,
         if settings.net_swap() {
@@ -166,14 +171,14 @@ pub(super) fn draw(frame: &mut Frame, area: Rect, state: &State, ui: &mut Ui, se
       " download",
       Style::default().fg(theme.color("title")).add_modifier(Modifier::BOLD),
     ),
-    Line::from(format!(" ▼ {}", rate(net.received_bytes_rate()))),
+    Line::from(format!(" {down_arrow} {}", rate(net.received_bytes_rate()))),
     Line::from(format!(" Peak {}", rate(totals.peak_download()))),
     Line::from(format!(" {total_label}{}", bytes(downloaded))),
     Line::styled(
       " upload",
       Style::default().fg(theme.color("title")).add_modifier(Modifier::BOLD),
     ),
-    Line::from(format!(" ▲ {}", rate(net.sent_bytes_rate()))),
+    Line::from(format!(" {up_arrow} {}", rate(net.sent_bytes_rate()))),
     Line::from(format!(" Peak {}", rate(totals.peak_upload()))),
     Line::from(format!(" {total_label}{}", bytes(uploaded))),
   ];
@@ -243,8 +248,8 @@ mod tests {
         })
         .collect();
       assert_eq!(arrow_rows.len(), 2);
-      assert!(arrow_rows[0].contains(if swap { '▲' } else { '▼' }));
-      assert!(arrow_rows[1].contains(if swap { '▼' } else { '▲' }));
+      assert!(arrow_rows[0].contains('▲'));
+      assert!(arrow_rows[1].contains('▼'));
     }
     let totals = &state.network_totals()["enp1s0"];
     ui.net_baselines
@@ -260,6 +265,61 @@ mod tests {
       .map(|cell| cell.symbol())
       .collect();
     assert!(text.contains("Reset ~0.0 B"));
+  }
+
+  #[test]
+  fn it_points_each_reading_in_its_graph_direction_and_restores_it() {
+    let state = crate::client::fixtures::state();
+    let net = &state.history().back().unwrap().interfaces()["enp1s0"];
+    for height in [8, 30] {
+      let mut ui = Ui::default();
+      let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, height)).unwrap();
+      let mut original = None;
+      for swap in [false, true, false] {
+        let settings = Settings::default().with_preference("net_swap", json!(swap)).unwrap();
+        terminal
+          .draw(|frame| draw(frame, frame.area(), &state, &mut ui, &settings))
+          .unwrap();
+        let buffer = terminal.backend().buffer();
+        let stats: Vec<String> = (0..height)
+          .map(|y| (91..119).map(|x| buffer[(x, y)].symbol()).collect())
+          .collect();
+        let download = format!(
+          "{} {}",
+          if swap { '▼' } else { '▲' },
+          rate(net.received_bytes_rate(), &settings)
+        );
+        let upload = format!(
+          "{} {}",
+          if swap { '▲' } else { '▼' },
+          rate(net.sent_bytes_rate(), &settings)
+        );
+        let down_row = stats.iter().position(|row| row.contains(&download)).unwrap();
+        let up_row = stats.iter().position(|row| row.contains(&upload)).unwrap();
+        assert_eq!(down_row > up_row, swap);
+        if height == 30 {
+          assert!(stats[down_row - 1].contains("download"));
+          assert!(stats[up_row - 1].contains("upload"));
+        }
+        let graph: Vec<String> = (1..height - 1)
+          .map(|y| (1..91).map(|x| buffer[(x, y)].symbol()).collect())
+          .collect();
+        assert!(graph.first().unwrap().contains('▲'));
+        assert!(graph.last().unwrap().contains('▼'));
+        assert!(graph.iter().any(|row| row.contains(if swap {
+          "▲ upload / download ▼"
+        } else {
+          "▲ download / upload ▼"
+        })));
+        if !swap {
+          if let Some(original) = &original {
+            assert_eq!(buffer, original);
+          } else {
+            original = Some(buffer.clone());
+          }
+        }
+      }
+    }
   }
 
   #[test]
