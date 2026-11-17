@@ -293,6 +293,7 @@ async fn monitor(
   let mut refresh = tokio::time::interval(Duration::from_millis(update_ms.max(2000)));
   refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
   let mut last_sample = Instant::now();
+  let mut last_app_sample = Instant::now();
   let mut previous_sample = None;
   let mut requests = BTreeMap::<u64, (&str, Instant)>::new();
   loop {
@@ -339,7 +340,7 @@ async fn monitor(
               Err(error) => state.apps_error = Some(error.to_string()),
             },
             _ => match result {
-              Ok(_) => { app_subscribed = true; state.app_stats_error = None; }
+              Ok(_) => { app_subscribed = true; }
               Err(error) => state.app_stats_error = Some(error.to_string()),
             },
           }
@@ -367,6 +368,7 @@ async fn monitor(
         } else if message["method"] == "collection_update" && (name == app_collection || name == "app.stats") {
           match server.api_version().app_stats(message["params"]["fields"].clone()) {
             Ok(stats) => {
+              last_app_sample = received;
               if state.app_history.len() == 120 { state.app_history.pop_front(); }
               state.app_history.push_back(Arc::new(stats));
               state.app_stats_updated_at = Some(received);
@@ -392,6 +394,10 @@ async fn monitor(
       }
       _ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_sample + Duration::from_secs((interval * 3).max(20)))) => {
         return Err(Error::Protocol("metrics feed stalled; reconnecting".into()));
+      }
+      _ = tokio::time::sleep_until((last_app_sample + Duration::from_secs((interval * 3).max(20))).into()), if app_subscribed => {
+        state.app_stats_error = Some("app stats feed stalled; reconnecting".into());
+        return Err(Error::Protocol("app stats feed stalled; reconnecting".into()));
       }
     }
   }
@@ -668,6 +674,93 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[tokio::test]
+    async fn it_reconnects_a_silent_app_feed_and_keeps_it_stale_until_a_sample() {
+      let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+      let address = listener.local_addr().unwrap();
+      let (ready, mut subscribed) = tokio::sync::mpsc::channel(1);
+      let (resume, mut resumed) = tokio::sync::mpsc::channel(1);
+      let peer = tokio::spawn(async move {
+        for attempt in 0..2 {
+          let (stream, _) = listener.accept().await.unwrap();
+          let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+          let mut metrics = false;
+          let mut tick = tokio::time::interval(Duration::from_millis(200));
+          loop {
+            tokio::select! {
+              message = socket.next() => {
+                let Some(Ok(Message::Text(message))) = message else { break; };
+                let request: Value = serde_json::from_str(&message).unwrap();
+                let result = match request["method"].as_str().unwrap() {
+                  "system.version" => json!("TrueNAS-25.10.8"),
+                  "system.info" => json!({"model":"CPU","loadavg":[0,0,0],"uptime_seconds":1}),
+                  "app.query" => json!([]),
+                  "core.subscribe" => {
+                    if request["params"][0].as_str().unwrap().starts_with("reporting") {
+                      metrics = true;
+                    } else if attempt == 1 {
+                      ready.send(()).await.unwrap();
+                    } else {
+                      socket.send(Message::Text(json!({"method":"collection_update",
+                        "params":{"collection":"app.stats","fields":[]}}).to_string().into())).await.unwrap();
+                    }
+                    json!(true)
+                  }
+                  _ => json!(true),
+                };
+                if socket.send(Message::Text(json!({"id":request["id"],"result":result}).to_string().into())).await.is_err() { break; }
+              }
+              _ = tick.tick(), if metrics => {
+                let fields = json!({"cpu":{"cpu":{"usage":25}},
+                  "memory":{"physical_memory_total":1000,"physical_memory_available":400,"arc_size":200},
+                  "interfaces":{}});
+                if socket.send(Message::Text(json!({"method":"collection_update",
+                  "params":{"collection":"reporting.realtime","fields":fields}}).to_string().into())).await.is_err() { break; }
+              }
+              Some(()) = resumed.recv(), if attempt == 1 => {
+                socket.send(Message::Text(json!({"method":"collection_update",
+                  "params":{"collection":"app.stats","fields":[]}}).to_string().into())).await.unwrap();
+              }
+            }
+          }
+        }
+      });
+      let server = Server::new("test".into(), format!("http://{address}").parse().unwrap()).unwrap();
+      let (mut receiver, _interval, task) = watch(server, Zeroizing::new("test-api-key".into()), 2000);
+      timeout(Duration::from_secs(26), subscribed.recv())
+        .await
+        .unwrap()
+        .unwrap();
+      timeout(Duration::from_secs(2), async {
+        while receiver.borrow().error().is_some() {
+          receiver.changed().await.unwrap();
+        }
+      })
+      .await
+      .unwrap();
+      assert!(receiver.borrow().history().len() > 10);
+      assert!(
+        receiver
+          .borrow()
+          .app_stats_error()
+          .as_ref()
+          .unwrap()
+          .contains("stalled")
+      );
+      resume.send(()).await.unwrap();
+      timeout(Duration::from_secs(2), async {
+        while receiver.borrow().app_history().len() < 2 {
+          receiver.changed().await.unwrap();
+        }
+      })
+      .await
+      .unwrap();
+      assert!(receiver.borrow().app_stats_error().is_none());
+      drop(receiver);
+      timeout(Duration::from_secs(2), task).await.unwrap().unwrap();
+      timeout(Duration::from_secs(2), peer).await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn it_collects_while_optional_replies_wait_and_expire() {
