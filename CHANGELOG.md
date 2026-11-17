@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-16
+
 ### Fixed
 
 - Options uses Tab for categories and arrows for settings and values, with
@@ -54,7 +56,8 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 
 - Initial release
 
-[Unreleased]: https://aaronmallen.dev/aaron/tntop/compare/0.2.0...HEAD
+[Unreleased]: https://aaronmallen.dev/aaron/tntop/compare/0.2.1...HEAD
+[0.2.1]: https://aaronmallen.dev/aaron/tntop/compare/0.2.0...0.2.1
 [0.2.0]: https://aaronmallen.dev/aaron/tntop/compare/0.1.0...0.2.0
 [0.1.0]: https://aaronmallen.dev/aaron/tntop/releases/tag/0.1.0
 
