@@ -1,5 +1,7 @@
 # tntop
 
+[![Discord][discord-badge]][discord-link]
+
 A [TUI] to monitor resources and apps on your [TrueNAS] server from a terminal.
 
 > [!WARNING]
@@ -379,6 +381,9 @@ tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
 
 [Aaron Allen]: https://aaronmallen.me
 [AGPLv3 License]: LICENSE
+[discord-badge]:
+https://img.shields.io/discord/1441938388780585062?style=for-the-badge&logo=discord&logoColor=white&label=Discord&labelColor=%235865F2
+[discord-link]: https://discord.gg/PqQdhf9VMF
 [Releases]: https://aaronmallen.dev/aaron/tntop/releases
 [showcase]: assets/tntop.showcase.01.png
 [TrueNAS]: https://www.truenas.com/
