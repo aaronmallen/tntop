@@ -1,5 +1,8 @@
 # tntop
 
+[![Build][build-badge]][build-workflow]
+[![Version][crates-badge]][crates.io]
+[![GitHub Sponsors][sponsor-badge]][sponsor-link]
 [![Discord][discord-badge]][discord-link]
 
 A [TUI] to monitor resources and apps on your [TrueNAS] server from a terminal.
@@ -381,10 +384,16 @@ tntop is licensed under the [AGPLv3 License]. Copyright © 2026 [Aaron Allen].
 
 [Aaron Allen]: https://aaronmallen.me
 [AGPLv3 License]: LICENSE
+[build-badge]: https://aaronmallen.dev/aaron/tntop/actions/workflows/ci.yml/badge.svg?branch=main&style=for-the-badge
+[build-workflow]: https://aaronmallen.dev/aaron/tntop/actions?workflow=ci.yml
+[crates-badge]: https://img.shields.io/crates/v/tntop?style=for-the-badge&logo=rust
+[crates.io]: https://crates.io/crates/tntop
 [discord-badge]:
 https://img.shields.io/discord/1441938388780585062?style=for-the-badge&logo=discord&logoColor=white&label=Discord&labelColor=%235865F2
 [discord-link]: https://discord.gg/PqQdhf9VMF
 [Releases]: https://aaronmallen.dev/aaron/tntop/releases
 [showcase]: assets/tntop.showcase.01.png
+[sponsor-badge]: https://img.shields.io/github/sponsors/aaronmallen?style=for-the-badge
+[sponsor-link]: https://github.com/sponsors/aaronmallen
 [TrueNAS]: https://www.truenas.com/
 [TUI]: https://en.wikipedia.org/wiki/Text-based_user_interface
